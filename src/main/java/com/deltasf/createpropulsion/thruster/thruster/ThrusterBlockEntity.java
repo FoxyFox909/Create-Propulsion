@@ -91,6 +91,14 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
     // unambiguous even when one tank is empty.
     private LazyOptional<IFluidHandler> multiFluidCap;
 
+    // Transient one-shot guard consumed by disassembleMulti(). Set by
+    // preventNextDisassembly() right before a relocation (e.g. the
+    // PhysicsAssembler copying the cube into shipyard coordinates) so the
+    // old BE doesn't tear the multi down on its way out. Not persisted --
+    // after the block's NBT is copied to the new location the new BE starts
+    // with this false, which is what we want.
+    private transient boolean suppressNextDisassembly = false;
+
     public ThrusterBlockEntity(BlockEntityType<?> typeIn, BlockPos pos, BlockState state) {
         super(typeIn, pos, state);
     }
@@ -267,11 +275,32 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
         controller.calculateObstruction(level, origin, facing);
     }
 
+    /** Cooperative hook for block relocators: call this on any member of a
+     *  formed multi right before the block is saved-and-moved, and the
+     *  cube's next disassembleMulti() call will be skipped. Sets a flag on
+     *  whichever cell you call it on; the flag is most useful on the
+     *  controller (since that's what actually runs disassemble), but
+     *  calling it on a slave is harmless and makes the caller simpler --
+     *  the assembler iterates every cell and sets the flag on each. */
+    public void preventNextDisassembly() {
+        this.suppressNextDisassembly = true;
+    }
+
     /** Distribute controller's aggregate fluid evenly back to all members
      *  (each member can hold exactly BASE_CAPACITY, and the aggregate was at
-     *  most size^3 * BASE_CAPACITY -- so the distribution is lossless). */
+     *  most size^3 * BASE_CAPACITY -- so the distribution is lossless).
+     *
+     *  When {@link #preventNextDisassembly()} has been called, the next
+     *  invocation of this method will be skipped and the flag cleared. This
+     *  cooperative hook exists so the PhysicsAssembler (and any future
+     *  relocation tool) can move an intact cube block-by-block without the
+     *  multi dissolving mid-move. */
     public void disassembleMulti() {
         if (!isController() || !isMultiblock()) return;
+        if (suppressNextDisassembly) {
+            suppressNextDisassembly = false;
+            return;
+        }
         int size = width;
         BlockPos origin = worldPosition;
 
@@ -797,7 +826,16 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
         super.write(compound, clientPacket);
         compound.putInt("Width", width);
         if (controllerPos != null) {
-            compound.put("Controller", NbtUtils.writeBlockPos(controllerPos));
+            // Store the controller as a RELATIVE offset from this cell,
+            // not an absolute world position. When the PhysicsAssembler
+            // copies the whole cube into ship space block-by-block, every
+            // cell moves by the same translation, so the offset is
+            // preserved even though the absolute positions change. On
+            // load we reconstruct the absolute controllerPos from the
+            // BE's (already-updated) worldPosition plus this offset.
+            compound.putInt("ControllerOffX", controllerPos.getX() - worldPosition.getX());
+            compound.putInt("ControllerOffY", controllerPos.getY() - worldPosition.getY());
+            compound.putInt("ControllerOffZ", controllerPos.getZ() - worldPosition.getZ());
         }
         if (updateConnectivity) {
             compound.putBoolean("UpdateConnectivity", true);
@@ -808,9 +846,22 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
     protected void read(CompoundTag compound, boolean clientPacket) {
         super.read(compound, clientPacket);
         width = Math.max(1, compound.getInt("Width"));
-        controllerPos = compound.contains("Controller")
-                ? NbtUtils.readBlockPos(compound.getCompound("Controller"))
-                : null;
+        if (compound.contains("ControllerOffX")) {
+            // Current format: relative offset, survives block moves.
+            controllerPos = worldPosition.offset(
+                    compound.getInt("ControllerOffX"),
+                    compound.getInt("ControllerOffY"),
+                    compound.getInt("ControllerOffZ"));
+        } else if (compound.contains("Controller")) {
+            // Legacy format: absolute position. Accepted on read so any
+            // pre-change saves don't lose their assembly, but we always
+            // write the new format back out. This path will break under
+            // a PhysicsAssembler move -- but only for multis that were
+            // formed before the update and never re-saved since.
+            controllerPos = NbtUtils.readBlockPos(compound.getCompound("Controller"));
+        } else {
+            controllerPos = null;
+        }
         updateConnectivity = compound.getBoolean("UpdateConnectivity");
         // Re-apply scaled tank capacities on the controller after load. The
         // fluid content is preserved by SmartFluidTankBehaviour's own NBT.
