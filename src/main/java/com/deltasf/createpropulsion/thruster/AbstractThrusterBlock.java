@@ -126,6 +126,25 @@ public abstract class AbstractThrusterBlock extends DirectionalBlock implements 
         if (blockEntity instanceof AbstractThrusterBlockEntity thrusterBlockEntity) {
             int newRedstonePower = level.getBestNeighborSignal(pos);
             thrusterBlockEntity.setRedstoneInput(newRedstonePower);
+
+            // For multiblock slaves, obstruction state lives on the
+            // controller, and a block placed in front of any cell of the
+            // cube should update the cube's scan as a whole. Route the
+            // calculateObstruction call to the controller so nozzle-face
+            // cells get re-scanned. Non-multi blocks (singles + creative
+            // thrusters) keep the old per-position call.
+            if (thrusterBlockEntity instanceof ThrusterBlockEntity t
+                    && t.isMultiblock() && !t.isController()) {
+                ThrusterBlockEntity ctrl = t.getControllerBE();
+                if (ctrl != null) {
+                    ctrl.calculateObstruction(
+                            level,
+                            ctrl.getBlockPos(),
+                            ctrl.getBlockState().getValue(FACING));
+                    return;
+                }
+            }
+
             thrusterBlockEntity.calculateObstruction(level, pos, state.getValue(FACING));
         }
     }

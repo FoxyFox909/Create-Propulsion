@@ -21,6 +21,8 @@ import net.minecraft.nbt.NbtUtils;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
@@ -257,6 +259,12 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
             t.setChanged();
             t.notifyUpdate();
         }
+
+        // Pass 5: run an obstruction scan NOW so the new nozzle-face cells
+        // have correct emptyBlocks before the next tick / neighbor change.
+        // This ensures particle emission and thrust are right immediately
+        // after assembly.
+        controller.calculateObstruction(level, origin, facing);
     }
 
     /** Distribute controller's aggregate fluid evenly back to all members
@@ -453,26 +461,226 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
     protected boolean shouldEmitParticles() {
         if (!super.shouldEmitParticles()) return false;
         if (!isMultiblock()) return true;
-        // Only cells on the front face of the cube emit -- otherwise interior
-        // cells spray exhaust through their own neighbors.
-        return isOnFrontFace();
+        // Only cells on the nozzle face of the cube emit -- otherwise interior
+        // and rear cells spray exhaust through other cube cells.
+        if (!isOnNozzleFace()) return false;
+        // A nozzle cell with zero empty space in front of it has nothing to
+        // emit into. Its own emptyBlocks was set by the controller's cube
+        // obstruction scan.
+        return emptyBlocks > 0;
     }
 
-    /** A member is "on the front face" if the block immediately in its
-     *  FACING direction is outside the cube. For a 2x2x2 cube that's 4
-     *  cells; for a 3x3x3 it's 9. */
-    protected boolean isOnFrontFace() {
+    /** A member is "on the nozzle face" if the block immediately behind it
+     *  (in FACING.getOpposite(), the exhaust direction) is outside the cube.
+     *  For a 2x2x2 cube that's 4 cells; for 3x3x3 it's 9. Note that FACING
+     *  is the thrust direction, so exhaust exits the cube on FACING's
+     *  opposite side. */
+    protected boolean isOnNozzleFace() {
         ThrusterBlockEntity ctrl = getControllerBE();
         if (ctrl == null) return true;
         Direction facing = getBlockState().getValue(AbstractThrusterBlock.FACING);
         BlockPos origin = ctrl.worldPosition;
-        BlockPos exhaust = worldPosition.relative(facing);
+        BlockPos exhaustExit = worldPosition.relative(facing.getOpposite());
         int s = ctrl.width;
-        int dx = exhaust.getX() - origin.getX();
-        int dy = exhaust.getY() - origin.getY();
-        int dz = exhaust.getZ() - origin.getZ();
+        int dx = exhaustExit.getX() - origin.getX();
+        int dy = exhaustExit.getY() - origin.getY();
+        int dz = exhaustExit.getZ() - origin.getZ();
         boolean inside = dx >= 0 && dx < s && dy >= 0 && dy < s && dz >= 0 && dz < s;
         return !inside;
+    }
+
+    // =====================================================================
+    // Obstruction (cube-wide) and redstone power aggregation
+    // =====================================================================
+    //
+    // Goals:
+    //  * A multiblock's obstruction is computed as a whole -- only the
+    //    controller drives the scan, slaves contribute nothing on their own.
+    //  * Each nozzle-face cell gets its own empty-blocks count (needed for
+    //    per-cell particle gating), but the value that feeds thrust is the
+    //    AVERAGE across nozzle-face cells, so thrust scales proportionally
+    //    to how many nozzles are clear.
+    //  * Redstone input aggregates across the whole cube: the effective
+    //    power is MAX(localSignal) over all members. Any wire touching any
+    //    cell is enough to fire the whole cube.
+
+    /** Overridden so (a) slaves never scan on their own, and (b) the
+     *  controller fans a scan across every nozzle-face cell in the cube.
+     *  Called from the parent's periodic tick and from doRedstoneCheck. */
+    @Override
+    public void calculateObstruction(Level lvl, BlockPos pos, Direction forwardDirection) {
+        if (!isController() && isMultiblock()) {
+            // Slave: do nothing. The controller owns obstruction state.
+            return;
+        }
+        if (isController() && isMultiblock()) {
+            runCubeObstructionScan(lvl);
+            return;
+        }
+        // Single-block: unchanged.
+        super.calculateObstruction(lvl, pos, forwardDirection);
+    }
+
+    /** Calls the parent's scan algorithm directly, bypassing this class's
+     *  override. The controller uses this to populate each nozzle-face
+     *  slave's own `emptyBlocks` field. */
+    void runObstructionScan(Level lvl, BlockPos pos, Direction forwardDirection) {
+        super.calculateObstruction(lvl, pos, forwardDirection);
+    }
+
+    /** Controller entry point: scans every nozzle-face cell in the cube,
+     *  writes each slave's own emptyBlocks, and if any changed, re-sends the
+     *  affected cells to clients so their particles react to the obstruction
+     *  in real time. */
+    private void runCubeObstructionScan(Level lvl) {
+        Direction facing = getBlockState().getValue(AbstractThrusterBlock.FACING);
+        BlockPos origin = worldPosition;
+        boolean anyChanged = false;
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < width; y++) {
+                for (int z = 0; z < width; z++) {
+                    BlockPos cellPos = origin.offset(x, y, z);
+                    BlockEntity be = lvl.getBlockEntity(cellPos);
+                    if (!(be instanceof ThrusterBlockEntity t)) continue;
+                    if (!t.isOnNozzleFace()) continue;
+                    int prev = t.emptyBlocks;
+                    t.runObstructionScan(lvl, cellPos, facing);
+                    if (t.emptyBlocks != prev) {
+                        anyChanged = true;
+                        t.setChanged();
+                        BlockState bs = t.getBlockState();
+                        lvl.sendBlockUpdated(cellPos, bs, bs, Block.UPDATE_CLIENTS);
+                    }
+                }
+            }
+        }
+        if (anyChanged) {
+            isThrustDirty = true;
+        }
+    }
+
+    /** The effect returned by this method feeds into the thrust math. For
+     *  multiblocks, we average the nozzle-face cells' effects -- if half the
+     *  nozzles are blocked, the cube produces ~half its rated thrust.
+     *  Slaves proxy upward so any caller reading the effect gets the
+     *  aggregate regardless of which cell they asked. */
+    @Override
+    protected float calculateObstructionEffect() {
+        if (!isController() && isMultiblock()) {
+            ThrusterBlockEntity ctrl = getControllerBE();
+            return ctrl != null ? ctrl.calculateObstructionEffect() : 0f;
+        }
+        if (isController() && isMultiblock() && level != null) {
+            int sum = 0;
+            int count = 0;
+            BlockPos origin = worldPosition;
+            for (int x = 0; x < width; x++) {
+                for (int y = 0; y < width; y++) {
+                    for (int z = 0; z < width; z++) {
+                        BlockEntity be = level.getBlockEntity(origin.offset(x, y, z));
+                        if (be instanceof ThrusterBlockEntity t && t.isOnNozzleFace()) {
+                            sum += t.emptyBlocks;
+                            count++;
+                        }
+                    }
+                }
+            }
+            if (count == 0) return 0f;
+            return (float) sum / ((float) count * (float) OBSTRUCTION_LENGTH);
+        }
+        return super.calculateObstructionEffect();
+    }
+
+    /** Goggles and any external readers get the aggregate value when
+     *  querying any cell of a multiblock. */
+    @Override
+    public int getEmptyBlocks() {
+        if (!isController() && isMultiblock()) {
+            ThrusterBlockEntity ctrl = getControllerBE();
+            return ctrl != null ? ctrl.getEmptyBlocks() : 0;
+        }
+        if (isController() && isMultiblock() && level != null) {
+            int sum = 0;
+            int count = 0;
+            BlockPos origin = worldPosition;
+            for (int x = 0; x < width; x++) {
+                for (int y = 0; y < width; y++) {
+                    for (int z = 0; z < width; z++) {
+                        BlockEntity be = level.getBlockEntity(origin.offset(x, y, z));
+                        if (be instanceof ThrusterBlockEntity t && t.isOnNozzleFace()) {
+                            sum += t.emptyBlocks;
+                            count++;
+                        }
+                    }
+                }
+            }
+            return count > 0 ? sum / count : OBSTRUCTION_LENGTH;
+        }
+        return super.getEmptyBlocks();
+    }
+
+    /** Each cell still stores its own local redstone reading, but in a
+     *  multiblock any change additionally funnels a "thrust dirty" pulse to
+     *  the controller so the aggregate MAX is re-evaluated on the next
+     *  tick. The cell itself still sends its own update so clients see the
+     *  new value (clients compute the same aggregate locally for particle
+     *  rendering). */
+    @Override
+    public void setRedstoneInput(int power) {
+        if (this.redstoneInput == power) return;
+        this.redstoneInput = power;
+        if (controlMode == ControlMode.NORMAL) {
+            dirtyThrust();
+            notifyUpdate();
+        }
+        if (isMultiblock() && !isController()) {
+            ThrusterBlockEntity ctrl = getControllerBE();
+            if (ctrl != null) {
+                ctrl.dirtyThrust();
+                ctrl.notifyUpdate();
+            }
+        }
+    }
+
+    /** For multiblocks, power is the MAX of every cell's local redstone
+     *  signal (so a wire touching any face of the cube activates the whole
+     *  thing). Slaves proxy through the controller; singles keep the
+     *  original behavior. Peripheral/digital control is not aggregated --
+     *  only the controller's digital input is consulted. */
+    @Override
+    public float getPower() {
+        if (!isController() && isMultiblock()) {
+            ThrusterBlockEntity ctrl = getControllerBE();
+            return ctrl != null ? ctrl.getPower() : 0f;
+        }
+        if (controlMode == ControlMode.PERIPHERAL) {
+            return digitalInput;
+        }
+        if (isController() && isMultiblock()) {
+            return getAggregatedRedstone() / 15.0f;
+        }
+        return redstoneInput / 15.0f;
+    }
+
+    /** Controller-side helper: MAX across every cube member's localRedstone.
+     *  Iterated fresh on each getPower() call -- bounded to 27 BE lookups
+     *  for a 3x3x3, which is negligible. */
+    private int getAggregatedRedstone() {
+        int max = redstoneInput;
+        if (level == null) return max;
+        BlockPos origin = worldPosition;
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < width; y++) {
+                for (int z = 0; z < width; z++) {
+                    if (x == 0 && y == 0 && z == 0) continue; // self already in max
+                    BlockEntity be = level.getBlockEntity(origin.offset(x, y, z));
+                    if (be instanceof ThrusterBlockEntity t) {
+                        if (t.redstoneInput > max) max = t.redstoneInput;
+                    }
+                }
+            }
+        }
+        return max;
     }
 
     // =====================================================================
@@ -486,16 +694,17 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
                 ThrusterBlockEntity ctrl = getControllerBE();
                 if (ctrl == null) return LazyOptional.empty();
                 Direction cubeFacing = ctrl.getBlockState().getValue(AbstractThrusterBlock.FACING);
-                // The nozzle face never accepts fluids -- that's where exhaust
-                // comes out.
-                if (side == cubeFacing) return LazyOptional.empty();
+                // The nozzle face never accepts fluids -- that's where the
+                // exhaust exits. FACING is the thrust direction; exhaust
+                // comes out the OPPOSITE side.
+                if (side == cubeFacing.getOpposite()) return LazyOptional.empty();
                 // Oxidizer lanes: Top/Bottom for horizontal thrusters, or the
                 // Z pair (north/south) for vertical-facing thrusters.
                 if (side != null && isOxidizerFace(side, cubeFacing)) {
                     return ctrl.oxidizerTank.getCapability().cast();
                 }
-                // Fuel lanes: Left, Right, and Back (opposite the nozzle) --
-                // the three remaining non-nozzle, non-oxidizer faces.
+                // Fuel lanes: Left, Right, and Front (the side opposite the
+                // nozzle -- which is the FACING side).
                 if (side != null && isFuelFace(side, cubeFacing)) {
                     return ctrl.tank.getCapability().cast();
                 }
@@ -528,15 +737,20 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
         return side.getAxis() == Direction.Axis.Y;
     }
 
-    /** Fuel goes in through any non-nozzle, non-oxidizer face. For a
-     *  horizontally-facing thruster that's the Back, Left, and Right. */
+    /** Fuel goes in through any non-nozzle, non-oxidizer face -- i.e. Left,
+     *  Right, and Front. "Front" in the user's convention is the side
+     *  opposite the nozzle, which in our geometry is the FACING side
+     *  (since FACING is the thrust direction and the exhaust exits
+     *  FACING.getOpposite()). */
     private static boolean isFuelFace(Direction side, Direction facing) {
-        if (side == facing) return false; // nozzle
+        if (side == facing.getOpposite()) return false; // nozzle
         return !isOxidizerFace(side, facing);
     }
 
     /** Accepts the mod's own oxidizer directly AND any fluid in the
-     *  forge:oxidizer tag. */
+     *  forge:oxidizer tag. The direct comparison is important because tag
+     *  lookups return false if the tag data file is missing -- without it,
+     *  inserting oxidizer would silently fail. */
     private boolean isOxidizer(FluidStack stack) {
         if (stack.isEmpty()) return false;
         return stack.getFluid().isSame(PropulsionFluids.OXIDIZER.get())
