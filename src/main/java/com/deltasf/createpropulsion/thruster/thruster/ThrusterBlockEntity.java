@@ -22,14 +22,17 @@ import net.minecraftforge.common.util.LazyOptional;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.capability.IFluidHandler;
 
-import java.util.List;
-
 import javax.annotation.Nullable;
+import java.util.List;
 
 public class ThrusterBlockEntity extends AbstractThrusterBlockEntity {
     public static final float BASE_FUEL_CONSUMPTION = 2;
     public static final int BASE_MAX_THRUST = 600000;
+    //Fuel tank: accessed from the FACING side (front). Unchanged from single-block setup.
     public SmartFluidTankBehaviour tank;
+    //Oxidizer tank: accessed from FACING.getOpposite() (rear). Consumed alongside fuel
+    //once Multiblock Thruster logic lands; for now it stores but is not drained.
+    public SmartFluidTankBehaviour oxidizerTank;
 
     public ThrusterBlockEntity(BlockEntityType<?> typeIn, BlockPos pos, BlockState state) {
         super(typeIn, pos, state);
@@ -40,12 +43,22 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity {
         super.addBehaviours(behaviours);
         tank = SmartFluidTankBehaviour.single(this, 200);
         behaviours.add(tank);
+        //INPUT (not the default TYPE) gives the oxidizer tank a distinct behaviour key,
+        //so its NBT ("Input") and behaviour lookup do not collide with the fuel tank's ("").
+        //Matches the pattern used by Create's BasinBlockEntity for input/output tanks.
+        oxidizerTank = new SmartFluidTankBehaviour(SmartFluidTankBehaviour.INPUT, this, 1, 200, false);
+        behaviours.add(oxidizerTank);
     }
 
     @Override
     public <T> LazyOptional<T> getCapability(Capability<T> cap, @Nullable Direction side) {
-        if (cap == ForgeCapabilities.FLUID_HANDLER && side == getFluidCapSide()) {
-            return tank.getCapability().cast();
+        if (cap == ForgeCapabilities.FLUID_HANDLER) {
+            if (side == getFluidCapSide()) {
+                return tank.getCapability().cast();
+            }
+            if (side == getOxidizerCapSide()) {
+                return oxidizerTank.getCapability().cast();
+            }
         }
         if (PropulsionCompatibility.CC_ACTIVE && computerBehaviour.isPeripheralCap(cap)) {
             return computerBehaviour.getPeripheralCapability().cast();
@@ -90,6 +103,13 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity {
         return getBlockState().getValue(ThrusterBlock.FACING);
     }
 
+    //Oxidizer feeds in from the rear (opposite the nozzle/FACING), which is
+    //the natural plumbing direction for propellants and keeps it away from the
+    //fuel inlet to avoid mis-filling on an empty thruster.
+    protected Direction getOxidizerCapSide() {
+        return getBlockState().getValue(ThrusterBlock.FACING).getOpposite();
+    }
+
     @Override
     protected double getNozzleOffsetFromCenter() {
         return 0.95;
@@ -114,15 +134,26 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity {
     protected void addThrusterDetails(List<Component> tooltip, boolean isPlayerSneaking) {
         super.addThrusterDetails(tooltip, isPlayerSneaking);
         containedFluidTooltip(tooltip, isPlayerSneaking, tank.getCapability().cast());
+        containedFluidTooltip(tooltip, isPlayerSneaking, oxidizerTank.getCapability().cast());
     }
 
     public FluidStack fluidStack() {
         return tank.getPrimaryHandler().getFluid();
     }
 
+    public FluidStack oxidizerStack() {
+        return oxidizerTank.getPrimaryHandler().getFluid();
+    }
+
     public boolean validFluid() {
         if (fluidStack().isEmpty()) return false;
         return getFuelProperties(fluidStack().getRawFluid()) != null;
+    }
+
+    //Hook for multiblock thrusters to gate operation on oxidizer presence.
+    //Single-block thrusters do not consume oxidizer and so do not call this yet.
+    public boolean validOxidizer() {
+        return !oxidizerStack().isEmpty();
     }
 
     public FluidThrusterProperties getFuelProperties(Fluid fluid) {
