@@ -2,37 +2,92 @@ package com.deltasf.createpropulsion.thruster.thruster;
 
 import com.deltasf.createpropulsion.PropulsionConfig;
 import com.deltasf.createpropulsion.compat.PropulsionCompatibility;
+import com.deltasf.createpropulsion.registries.PropulsionFluids;
+import com.deltasf.createpropulsion.thruster.AbstractThrusterBlock;
 import com.deltasf.createpropulsion.thruster.AbstractThrusterBlockEntity;
 import com.deltasf.createpropulsion.thruster.FluidThrusterProperties;
 import com.deltasf.createpropulsion.thruster.ThrusterFuelManager;
+import com.simibubi.create.foundation.blockEntity.IMultiBlockEntityContainer;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
 import com.simibubi.create.foundation.blockEntity.behaviour.fluid.SmartFluidTankBehaviour;
+import com.simibubi.create.foundation.fluid.CombinedTankWrapper;
 import com.simibubi.create.foundation.utility.CreateLang;
 import net.createmod.catnip.lang.LangBuilder;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtUtils;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.material.Fluid;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.common.util.LazyOptional;
 import net.minecraftforge.fluids.FluidStack;
+import net.minecraftforge.fluids.IFluidTank;
 import net.minecraftforge.fluids.capability.IFluidHandler;
+import net.minecraftforge.fluids.capability.IFluidHandler.FluidAction;
+import net.minecraftforge.registries.ForgeRegistries;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.List;
 
-public class ThrusterBlockEntity extends AbstractThrusterBlockEntity {
+/**
+ * Regular thruster block entity. Acts as either a single-block thruster
+ * (width == 1) or as one cell of a Multiblock Thruster (width == 2 or 3).
+ *
+ * Multiblock assembly is a strict cube of thrusters all facing the same
+ * direction. Because Create's generic ConnectivityHandler only filters by
+ * BlockEntityType -- it has no way to reject a south-facing neighbor in an
+ * otherwise north-facing group -- the cube search is done here by hand.
+ * Controller/slave layout and field names mirror FluidTankBlockEntity.
+ *
+ * Singles are unchanged in behavior: oxidizer is not required and not drained.
+ * Only multiblock thrusters consume oxidizer alongside fuel.
+ */
+public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
+        implements IMultiBlockEntityContainer.Fluid {
+
     public static final float BASE_FUEL_CONSUMPTION = 2;
     public static final int BASE_MAX_THRUST = 600000;
-    //Fuel tank: accessed from the FACING side (front). Unchanged from single-block setup.
+    public static final int BASE_CAPACITY = 200;
+    public static final int MAX_WIDTH = 3;
+
+    // The nested type IMultiBlockEntityContainer.Fluid inherited from the
+    // interface we implement shadows a bare `Fluid` identifier in this class's
+    // body (Java resolves inherited nested types ahead of imports). FQN works
+    // around that. The tag itself sits under `forge:oxidizer` so other mods
+    // can contribute compatible oxidizers via datapack.
+    public static final TagKey<net.minecraft.world.level.material.Fluid> OXIDIZER_TAG = TagKey.create(
+            ForgeRegistries.FLUIDS.getRegistryKey(),
+            ResourceLocation.fromNamespaceAndPath("forge", "oxidizer"));
+
+    // ---- Tanks ----
     public SmartFluidTankBehaviour tank;
-    //Oxidizer tank: accessed from FACING.getOpposite() (rear). Consumed alongside fuel
-    //once Multiblock Thruster logic lands; for now it stores but is not drained.
     public SmartFluidTankBehaviour oxidizerTank;
+
+    // ---- Multiblock state ----
+    // Null when this BE is a controller (or a lone single). Otherwise the
+    // lowest-corner position of the cube this BE is a slave of.
+    @Nullable
+    protected BlockPos controllerPos;
+    // Cube side length. 1 == single, 2 == medium, 3 == large.
+    protected int width = 1;
+    // Fresh BEs start with this true so they try assembly on their first
+    // server tick. Persisted BEs override it from NBT (normally false once a
+    // multi has already settled). Cleared inside tick() after tryAssemble.
+    protected boolean updateConnectivity = true;
+
+    // Cached capability handed to adjacent pipes when in multi mode: a
+    // CombinedTankWrapper over controller's fuel + oxidizer with
+    // enforceVariety(). The SmartFluidTank validators below make the routing
+    // unambiguous even when one tank is empty.
+    private LazyOptional<IFluidHandler> multiFluidCap;
 
     public ThrusterBlockEntity(BlockEntityType<?> typeIn, BlockPos pos, BlockState state) {
         super(typeIn, pos, state);
@@ -41,52 +96,277 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity {
     @Override
     public void addBehaviours(List<BlockEntityBehaviour> behaviours) {
         super.addBehaviours(behaviours);
-        tank = SmartFluidTankBehaviour.single(this, 200);
+        tank = SmartFluidTankBehaviour.single(this, BASE_CAPACITY);
         behaviours.add(tank);
-        //INPUT (not the default TYPE) gives the oxidizer tank a distinct behaviour key,
-        //so its NBT ("Input") and behaviour lookup do not collide with the fuel tank's ("").
-        //Matches the pattern used by Create's BasinBlockEntity for input/output tanks.
-        oxidizerTank = new SmartFluidTankBehaviour(SmartFluidTankBehaviour.INPUT, this, 1, 200, false);
+        // INPUT (not the default TYPE) gives the oxidizer tank a distinct
+        // behaviour key so its NBT/lookup do not collide with the fuel tank.
+        oxidizerTank = new SmartFluidTankBehaviour(
+                SmartFluidTankBehaviour.INPUT, this, 1, BASE_CAPACITY, false);
         behaviours.add(oxidizerTank);
+
+        // Per-tank fluid validators. Used by CombinedTankWrapper.enforceVariety
+        // to route fuel vs oxidizer to the correct internal tank. The oxidizer
+        // validator falls back to a direct fluid comparison so routing still
+        // works if the forge:oxidizer tag data file is missing.
+        tank.getPrimaryHandler()
+                .setValidator(stack -> ThrusterFuelManager.getProperties(stack.getFluid()) != null);
+        oxidizerTank.getPrimaryHandler().setValidator(this::isOxidizer);
+    }
+
+    // =====================================================================
+    // Multiblock lifecycle
+    // =====================================================================
+
+    public boolean isMultiblock() {
+        return width > 1;
     }
 
     @Override
-    public <T> LazyOptional<T> getCapability(Capability<T> cap, @Nullable Direction side) {
-        if (cap == ForgeCapabilities.FLUID_HANDLER) {
-            if (side == getFluidCapSide()) {
-                return tank.getCapability().cast();
-            }
-            if (side == getOxidizerCapSide()) {
-                return oxidizerTank.getCapability().cast();
-            }
-        }
-        if (PropulsionCompatibility.CC_ACTIVE && computerBehaviour.isPeripheralCap(cap)) {
-            return computerBehaviour.getPeripheralCapability().cast();
-        }
-        return super.getCapability(cap, side);
+    public boolean isController() {
+        return controllerPos == null;
     }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public ThrusterBlockEntity getControllerBE() {
+        if (isController() || !hasLevel()) return this;
+        BlockEntity be = level.getBlockEntity(controllerPos);
+        return be instanceof ThrusterBlockEntity t ? t : null;
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (level == null || level.isClientSide) return;
+        if (updateConnectivity) {
+            updateConnectivity = false;
+            // Only controllers (or singles) drive assembly. Slaves do nothing
+            // here; their state is managed by their controller.
+            if (isController() && !isMultiblock()) {
+                tryAssemble();
+            }
+        }
+    }
+
+    /** Search the neighborhood of this thruster for the largest valid
+     *  same-facing cube that contains it. Disassembles any smaller sub-multis
+     *  found inside before forming. */
+    protected void tryAssemble() {
+        Direction facing = getBlockState().getValue(AbstractThrusterBlock.FACING);
+        for (int size = MAX_WIDTH; size >= 2; size--) {
+            BlockPos origin = findCubeOrigin(size, facing);
+            if (origin != null) {
+                formMulti(origin, size, facing);
+                return;
+            }
+        }
+    }
+
+    /** Returns the lowest-corner position of a valid size^3 cube that
+     *  contains this BE, or null if none exists. */
+    @Nullable
+    protected BlockPos findCubeOrigin(int size, Direction facing) {
+        for (int dx = 0; dx < size; dx++) {
+            for (int dy = 0; dy < size; dy++) {
+                for (int dz = 0; dz < size; dz++) {
+                    BlockPos origin = worldPosition.offset(-dx, -dy, -dz);
+                    if (isValidCube(origin, size, facing)) return origin;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** A cube is valid if every position is a thruster, every thruster faces
+     *  `facing`, and no position is already part of a DIFFERENT multi of
+     *  size >= size (we can't steal cells from a multi that's already at
+     *  least as big as the one we want to form). Sub-multis strictly smaller
+     *  will be disassembled and absorbed. */
+    protected boolean isValidCube(BlockPos origin, int size, Direction facing) {
+        for (int x = 0; x < size; x++) {
+            for (int y = 0; y < size; y++) {
+                for (int z = 0; z < size; z++) {
+                    BlockPos pos = origin.offset(x, y, z);
+                    BlockState state = level.getBlockState(pos);
+                    if (!state.hasProperty(AbstractThrusterBlock.FACING)) return false;
+                    if (state.getValue(AbstractThrusterBlock.FACING) != facing) return false;
+                    BlockEntity be = level.getBlockEntity(pos);
+                    if (!(be instanceof ThrusterBlockEntity t)) return false;
+                    if (t.isMultiblock() && t.width >= size) return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /** Walk the cube, break any sub-multis, gather every member's fluids into
+     *  the controller's scaled aggregate tanks, and update multi state on all
+     *  cells. */
+    protected void formMulti(BlockPos origin, int size, Direction facing) {
+        // Pass 1: dissolve any sub-multis so their fluids are redistributed to
+        // individual cells first (avoids fluid loss when shrinking controller
+        // capacities mid-form).
+        for (int x = 0; x < size; x++) {
+            for (int y = 0; y < size; y++) {
+                for (int z = 0; z < size; z++) {
+                    BlockPos pos = origin.offset(x, y, z);
+                    BlockEntity be = level.getBlockEntity(pos);
+                    if (be instanceof ThrusterBlockEntity t && t.isMultiblock()) {
+                        ThrusterBlockEntity ctrl = t.getControllerBE();
+                        if (ctrl != null) ctrl.disassembleMulti();
+                    }
+                }
+            }
+        }
+
+        // Pass 2: gather
+        List<ThrusterBlockEntity> members = new ArrayList<>(size * size * size);
+        ThrusterBlockEntity controller = null;
+        FluidStack totalFuel = FluidStack.EMPTY;
+        FluidStack totalOx = FluidStack.EMPTY;
+        for (int x = 0; x < size; x++) {
+            for (int y = 0; y < size; y++) {
+                for (int z = 0; z < size; z++) {
+                    BlockPos pos = origin.offset(x, y, z);
+                    BlockEntity be = level.getBlockEntity(pos);
+                    if (!(be instanceof ThrusterBlockEntity t)) return; // abort: race condition
+                    members.add(t);
+                    if (pos.equals(origin)) controller = t;
+                    totalFuel = mergeFluid(totalFuel, t.tank.getPrimaryHandler().getFluid());
+                    totalOx = mergeFluid(totalOx, t.oxidizerTank.getPrimaryHandler().getFluid());
+                    t.tank.getPrimaryHandler().setFluid(FluidStack.EMPTY);
+                    t.oxidizerTank.getPrimaryHandler().setFluid(FluidStack.EMPTY);
+                }
+            }
+        }
+        if (controller == null) return;
+
+        // Pass 3: scale controller capacity and set its aggregate contents
+        int newCap = BASE_CAPACITY * size * size * size;
+        controller.tank.getPrimaryHandler().setCapacity(newCap);
+        controller.oxidizerTank.getPrimaryHandler().setCapacity(newCap);
+        controller.tank.getPrimaryHandler().setFluid(trimToCapacity(totalFuel, newCap));
+        controller.oxidizerTank.getPrimaryHandler().setFluid(trimToCapacity(totalOx, newCap));
+
+        // Pass 4: stamp multi state on everyone
+        for (ThrusterBlockEntity t : members) {
+            t.controllerPos = (t == controller) ? null : origin;
+            t.width = size;
+            t.invalidateMultiCap();
+            t.isThrustDirty = true;
+            t.setChanged();
+            t.notifyUpdate();
+        }
+    }
+
+    /** Distribute controller's aggregate fluid evenly back to all members
+     *  (each member can hold exactly BASE_CAPACITY, and the aggregate was at
+     *  most size^3 * BASE_CAPACITY -- so the distribution is lossless). */
+    public void disassembleMulti() {
+        if (!isController() || !isMultiblock()) return;
+        int size = width;
+        BlockPos origin = worldPosition;
+
+        FluidStack fuelPool = tank.getPrimaryHandler().getFluid().copy();
+        FluidStack oxPool = oxidizerTank.getPrimaryHandler().getFluid().copy();
+        tank.getPrimaryHandler().setFluid(FluidStack.EMPTY);
+        oxidizerTank.getPrimaryHandler().setFluid(FluidStack.EMPTY);
+        tank.getPrimaryHandler().setCapacity(BASE_CAPACITY);
+        oxidizerTank.getPrimaryHandler().setCapacity(BASE_CAPACITY);
+
+        for (int x = 0; x < size; x++) {
+            for (int y = 0; y < size; y++) {
+                for (int z = 0; z < size; z++) {
+                    BlockPos pos = origin.offset(x, y, z);
+                    BlockEntity be = level.getBlockEntity(pos);
+                    if (!(be instanceof ThrusterBlockEntity t)) continue;
+                    // Share: each member takes up to BASE_CAPACITY from each pool.
+                    if (!fuelPool.isEmpty()) {
+                        int take = Math.min(BASE_CAPACITY, fuelPool.getAmount());
+                        FluidStack slice = new FluidStack(fuelPool, take);
+                        t.tank.getPrimaryHandler().fill(slice, FluidAction.EXECUTE);
+                        fuelPool.shrink(take);
+                    }
+                    if (!oxPool.isEmpty()) {
+                        int take = Math.min(BASE_CAPACITY, oxPool.getAmount());
+                        FluidStack slice = new FluidStack(oxPool, take);
+                        t.oxidizerTank.getPrimaryHandler().fill(slice, FluidAction.EXECUTE);
+                        oxPool.shrink(take);
+                    }
+                    t.controllerPos = null;
+                    t.width = 1;
+                    // Let every released cell re-attempt assembly next tick,
+                    // so removing one block from a 3x3x3 can still settle into
+                    // a 2x2x2 with the remaining corner cells.
+                    t.updateConnectivity = true;
+                    t.invalidateMultiCap();
+                    t.isThrustDirty = true;
+                    // Zero out thrust so slaves don't keep applying force
+                    // after the multi breaks.
+                    t.thrusterData.setThrust(0);
+                    t.setChanged();
+                    t.notifyUpdate();
+                }
+            }
+        }
+    }
+
+    private static FluidStack mergeFluid(FluidStack pool, FluidStack addition) {
+        if (addition.isEmpty()) return pool;
+        if (pool.isEmpty()) return addition.copy();
+        if (pool.isFluidEqual(addition)) {
+            FluidStack out = pool.copy();
+            out.grow(addition.getAmount());
+            return out;
+        }
+        // Mismatched fuel types: keep the pool's fluid, discard the extra.
+        return pool;
+    }
+
+    private static FluidStack trimToCapacity(FluidStack stack, int cap) {
+        if (stack.isEmpty() || stack.getAmount() <= cap) return stack;
+        FluidStack out = stack.copy();
+        out.setAmount(cap);
+        return out;
+    }
+
+    // =====================================================================
+    // Thrust logic
+    // =====================================================================
 
     @Override
     public void updateThrust(BlockState currentBlockState) {
+        // Slaves never drive their own thrust -- the controller writes to
+        // their thrusterData each tick.
+        if (!isController()) {
+            isThrustDirty = false;
+            return;
+        }
+        if (isMultiblock()) {
+            updateMultiThrust(currentBlockState);
+        } else {
+            updateSingleThrust(currentBlockState);
+        }
+    }
+
+    /** Single-block path -- preserves the exact pre-multiblock behavior so
+     *  fuel-only thrusters in existing worlds are untouched. */
+    protected void updateSingleThrust(BlockState currentBlockState) {
         float thrust = 0;
         float currentPower = getPower();
-
-        //This thruster only works if it has valid fuel and power
         if (isWorking() && currentPower > 0) {
-            var properties = getFuelProperties(fluidStack().getRawFluid());
+            FluidThrusterProperties properties = getFuelProperties(fluidStack().getRawFluid());
             float obstructionEffect = calculateObstructionEffect();
             float thrustPercentage = Math.min(currentPower, obstructionEffect);
-
             if (thrustPercentage > 0 && properties != null) {
-                int tick_rate = PropulsionConfig.THRUSTER_TICKS_PER_UPDATE.get();
-                int consumption = calculateFuelConsumption(currentPower, properties.consumptionMultiplier, tick_rate);
-                FluidStack drainedStack = tank.getPrimaryHandler().drain(consumption, IFluidHandler.FluidAction.EXECUTE);
-                int fuelConsumed = drainedStack.getAmount();
-
-                if (fuelConsumed > 0) {
-                    float consumptionRatio = (float) fuelConsumed / (float) consumption;
+                int tickRate = PropulsionConfig.THRUSTER_TICKS_PER_UPDATE.get();
+                int consumption = calculateFuelConsumption(currentPower, properties.consumptionMultiplier, tickRate);
+                FluidStack drained = tank.getPrimaryHandler().drain(consumption, FluidAction.EXECUTE);
+                int consumed = drained.getAmount();
+                if (consumed > 0) {
+                    float ratio = (float) consumed / (float) consumption;
                     float thrustMultiplier = PropulsionConfig.THRUSTER_THRUST_MULTIPLIER.get().floatValue();
-                    thrust = BASE_MAX_THRUST * thrustMultiplier * thrustPercentage * properties.thrustMultiplier * consumptionRatio;
+                    thrust = BASE_MAX_THRUST * thrustMultiplier * thrustPercentage * properties.thrustMultiplier * ratio;
                 }
             }
         }
@@ -94,33 +374,255 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity {
         isThrustDirty = false;
     }
 
+    /** Multiblock path: scale consumption and thrust by block count, require
+     *  both fuel and oxidizer, distribute the resulting thrust equally across
+     *  every cube member so the net force passes through the geometric
+     *  center (no parasitic torque). */
+    protected void updateMultiThrust(BlockState currentBlockState) {
+        int n = width * width * width;
+        float totalThrust = 0;
+        float currentPower = getPower();
+
+        if (isWorking() && currentPower > 0) {
+            FluidThrusterProperties properties = getFuelProperties(fluidStack().getRawFluid());
+            float obstructionEffect = calculateObstructionEffect();
+            float thrustPercentage = Math.min(currentPower, obstructionEffect);
+            if (thrustPercentage > 0 && properties != null) {
+                int tickRate = PropulsionConfig.THRUSTER_TICKS_PER_UPDATE.get();
+                int fuelNeeded = calculateFuelConsumption(currentPower, properties.consumptionMultiplier, tickRate) * n;
+                // Oxidizer burns 1:1 with fuel by default. The consumption
+                // multiplier is shared -- if the fuel is cheap, the matching
+                // oxidizer draw is also cheap.
+                int oxNeeded = fuelNeeded;
+
+                // Simulate drains first so a shortfall in either fluid doesn't
+                // waste the other.
+                FluidStack fuelSim = tank.getPrimaryHandler().drain(fuelNeeded, FluidAction.SIMULATE);
+                FluidStack oxSim = oxidizerTank.getPrimaryHandler().drain(oxNeeded, FluidAction.SIMULATE);
+                int fuelAvail = fuelSim.getAmount();
+                int oxAvail = oxSim.getAmount();
+
+                // Scale by whichever is the limiting reagent.
+                float fuelRatio = fuelNeeded > 0 ? (float) fuelAvail / (float) fuelNeeded : 0;
+                float oxRatio = oxNeeded > 0 ? (float) oxAvail / (float) oxNeeded : 0;
+                float limitRatio = Math.min(fuelRatio, oxRatio);
+
+                if (limitRatio > 0) {
+                    int fuelActual = (int) (fuelNeeded * limitRatio);
+                    int oxActual = (int) (oxNeeded * limitRatio);
+                    tank.getPrimaryHandler().drain(fuelActual, FluidAction.EXECUTE);
+                    oxidizerTank.getPrimaryHandler().drain(oxActual, FluidAction.EXECUTE);
+                    float thrustMultiplier = PropulsionConfig.THRUSTER_THRUST_MULTIPLIER.get().floatValue();
+                    totalThrust = BASE_MAX_THRUST * thrustMultiplier * thrustPercentage
+                            * properties.thrustMultiplier * limitRatio * n;
+                }
+            }
+        }
+
+        // Distribute across every cube member. Each ThrusterForceApplier reads
+        // its own thrusterData, so net force = totalThrust applied at the
+        // centroid of the cube -- no torque.
+        float share = totalThrust / n;
+        BlockPos origin = worldPosition;
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < width; y++) {
+                for (int z = 0; z < width; z++) {
+                    BlockEntity be = level.getBlockEntity(origin.offset(x, y, z));
+                    if (be instanceof ThrusterBlockEntity t) {
+                        t.thrusterData.setThrust(share);
+                    }
+                }
+            }
+        }
+        isThrustDirty = false;
+    }
+
     @Override
     protected boolean isWorking() {
-        return validFluid();
+        if (!isController()) {
+            ThrusterBlockEntity ctrl = getControllerBE();
+            return ctrl != null && ctrl.isWorking();
+        }
+        if (!validFluid()) return false;
+        // Multiblock additionally requires oxidizer to be present.
+        if (isMultiblock() && !validOxidizer()) return false;
+        return true;
+    }
+
+    @Override
+    protected boolean shouldEmitParticles() {
+        if (!super.shouldEmitParticles()) return false;
+        if (!isMultiblock()) return true;
+        // Only cells on the front face of the cube emit -- otherwise interior
+        // cells spray exhaust through their own neighbors.
+        return isOnFrontFace();
+    }
+
+    /** A member is "on the front face" if the block immediately in its
+     *  FACING direction is outside the cube. For a 2x2x2 cube that's 4
+     *  cells; for a 3x3x3 it's 9. */
+    protected boolean isOnFrontFace() {
+        ThrusterBlockEntity ctrl = getControllerBE();
+        if (ctrl == null) return true;
+        Direction facing = getBlockState().getValue(AbstractThrusterBlock.FACING);
+        BlockPos origin = ctrl.worldPosition;
+        BlockPos exhaust = worldPosition.relative(facing);
+        int s = ctrl.width;
+        int dx = exhaust.getX() - origin.getX();
+        int dy = exhaust.getY() - origin.getY();
+        int dz = exhaust.getZ() - origin.getZ();
+        boolean inside = dx >= 0 && dx < s && dy >= 0 && dy < s && dz >= 0 && dz < s;
+        return !inside;
+    }
+
+    // =====================================================================
+    // Capability routing
+    // =====================================================================
+
+    @Override
+    public <T> LazyOptional<T> getCapability(Capability<T> cap, @Nullable Direction side) {
+        if (cap == ForgeCapabilities.FLUID_HANDLER) {
+            if (isMultiblock()) {
+                ThrusterBlockEntity ctrl = getControllerBE();
+                if (ctrl == null) return LazyOptional.empty();
+                Direction cubeFacing = ctrl.getBlockState().getValue(AbstractThrusterBlock.FACING);
+                // The nozzle face never accepts fluids -- that's where exhaust
+                // comes out.
+                if (side == cubeFacing) return LazyOptional.empty();
+                // Oxidizer lanes: Top/Bottom for horizontal thrusters, or the
+                // Z pair (north/south) for vertical-facing thrusters.
+                if (side != null && isOxidizerFace(side, cubeFacing)) {
+                    return ctrl.oxidizerTank.getCapability().cast();
+                }
+                // Fuel lanes: Left, Right, and Back (opposite the nozzle) --
+                // the three remaining non-nozzle, non-oxidizer faces.
+                if (side != null && isFuelFace(side, cubeFacing)) {
+                    return ctrl.tank.getCapability().cast();
+                }
+                // side == null is a non-directional query (goggles, JEI
+                // previews, things that just want to read contents). Hand out
+                // the combined wrapper so those still work.
+                return ctrl.getMultiFluidCapability().cast();
+            }
+            // Single-block behavior: unchanged (fuel on FACING, oxidizer on
+            // the opposite face). Existing worlds with pipes already hooked
+            // up keep working without re-plumbing.
+            if (side == getFluidCapSide()) return tank.getCapability().cast();
+            if (side == getOxidizerCapSide()) return oxidizerTank.getCapability().cast();
+        }
+        if (PropulsionCompatibility.CC_ACTIVE && computerBehaviour.isPeripheralCap(cap)) {
+            return computerBehaviour.getPeripheralCapability().cast();
+        }
+        return super.getCapability(cap, side);
+    }
+
+    /** True iff `side` is one of the two faces designated for oxidizer inflow
+     *  on a multiblock with the given nozzle direction. Horizontal thrusters
+     *  use Y (UP/DOWN); vertical-facing thrusters (FACING == UP or DOWN) fall
+     *  back to Z (NORTH/SOUTH) so there's always a well-defined pair. */
+    private static boolean isOxidizerFace(Direction side, Direction facing) {
+        if (side.getAxis() == facing.getAxis()) return false;
+        if (facing.getAxis() == Direction.Axis.Y) {
+            return side.getAxis() == Direction.Axis.Z;
+        }
+        return side.getAxis() == Direction.Axis.Y;
+    }
+
+    /** Fuel goes in through any non-nozzle, non-oxidizer face. For a
+     *  horizontally-facing thruster that's the Back, Left, and Right. */
+    private static boolean isFuelFace(Direction side, Direction facing) {
+        if (side == facing) return false; // nozzle
+        return !isOxidizerFace(side, facing);
+    }
+
+    /** Accepts the mod's own oxidizer directly AND any fluid in the
+     *  forge:oxidizer tag. */
+    private boolean isOxidizer(FluidStack stack) {
+        if (stack.isEmpty()) return false;
+        return stack.getFluid().isSame(PropulsionFluids.OXIDIZER.get())
+                || stack.getFluid().is(OXIDIZER_TAG);
+    }
+
+    protected LazyOptional<IFluidHandler> getMultiFluidCapability() {
+        if (multiFluidCap == null || !multiFluidCap.isPresent()) {
+            multiFluidCap = LazyOptional.of(() -> new CombinedTankWrapper(
+                    tank.getCapability().orElse(null),
+                    oxidizerTank.getCapability().orElse(null)
+            ).enforceVariety());
+        }
+        return multiFluidCap;
+    }
+
+    protected void invalidateMultiCap() {
+        if (multiFluidCap != null) {
+            multiFluidCap.invalidate();
+            multiFluidCap = null;
+        }
+    }
+
+    @Override
+    public void invalidate() {
+        super.invalidate();
+        invalidateMultiCap();
     }
 
     protected Direction getFluidCapSide() {
         return getBlockState().getValue(ThrusterBlock.FACING);
     }
 
-    //Oxidizer feeds in from the rear (opposite the nozzle/FACING), which is
-    //the natural plumbing direction for propellants and keeps it away from the
-    //fuel inlet to avoid mis-filling on an empty thruster.
     protected Direction getOxidizerCapSide() {
         return getBlockState().getValue(ThrusterBlock.FACING).getOpposite();
     }
 
+    // =====================================================================
+    // NBT
+    // =====================================================================
+
     @Override
-    protected double getNozzleOffsetFromCenter() {
-        return 0.95;
+    protected void write(CompoundTag compound, boolean clientPacket) {
+        super.write(compound, clientPacket);
+        compound.putInt("Width", width);
+        if (controllerPos != null) {
+            compound.put("Controller", NbtUtils.writeBlockPos(controllerPos));
+        }
+        if (updateConnectivity) {
+            compound.putBoolean("UpdateConnectivity", true);
+        }
     }
 
     @Override
+    protected void read(CompoundTag compound, boolean clientPacket) {
+        super.read(compound, clientPacket);
+        width = Math.max(1, compound.getInt("Width"));
+        controllerPos = compound.contains("Controller")
+                ? NbtUtils.readBlockPos(compound.getCompound("Controller"))
+                : null;
+        updateConnectivity = compound.getBoolean("UpdateConnectivity");
+        // Re-apply scaled tank capacities on the controller after load. The
+        // fluid content is preserved by SmartFluidTankBehaviour's own NBT.
+        if (isController() && isMultiblock()) {
+            int cap = BASE_CAPACITY * width * width * width;
+            tank.getPrimaryHandler().setCapacity(cap);
+            oxidizerTank.getPrimaryHandler().setCapacity(cap);
+        }
+    }
+
+    // =====================================================================
+    // Goggles + helpers
+    // =====================================================================
+
+    @Override
     protected LangBuilder getGoggleStatus() {
+        if (!isController()) {
+            ThrusterBlockEntity ctrl = getControllerBE();
+            if (ctrl != null && ctrl != this) return ctrl.getGoggleStatus();
+        }
         if (fluidStack().isEmpty()) {
             return CreateLang.builder().add(Component.translatable("createpropulsion.gui.goggles.thruster.status.no_fuel")).style(ChatFormatting.RED);
         } else if (!validFluid()) {
             return CreateLang.builder().add(Component.translatable("createpropulsion.gui.goggles.thruster.status.wrong_fuel")).style(ChatFormatting.RED);
+        } else if (isMultiblock() && !validOxidizer()) {
+            return CreateLang.builder().add(Component.translatable("createpropulsion.gui.goggles.thruster.status.no_oxidizer")).style(ChatFormatting.RED);
         } else if (!isPowered()) {
             return CreateLang.builder().add(Component.translatable("createpropulsion.gui.goggles.thruster.status.not_powered")).style(ChatFormatting.GOLD);
         } else if (emptyBlocks == 0) {
@@ -133,16 +635,31 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity {
     @Override
     protected void addThrusterDetails(List<Component> tooltip, boolean isPlayerSneaking) {
         super.addThrusterDetails(tooltip, isPlayerSneaking);
-        containedFluidTooltip(tooltip, isPlayerSneaking, tank.getCapability().cast());
-        containedFluidTooltip(tooltip, isPlayerSneaking, oxidizerTank.getCapability().cast());
+        // Slaves defer to the controller so players see real aggregate levels
+        // whichever cell they're looking at.
+        ThrusterBlockEntity ctrl = isController() ? this : getControllerBE();
+        if (ctrl == null) ctrl = this;
+        if (ctrl.isMultiblock()) {
+            CreateLang.builder()
+                    .add(Component.translatable("createpropulsion.gui.goggles.thruster.size"))
+                    .text(": " + ctrl.width + "x" + ctrl.width + "x" + ctrl.width)
+                    .style(ChatFormatting.GRAY)
+                    .forGoggles(tooltip);
+        }
+        containedFluidTooltip(tooltip, isPlayerSneaking, ctrl.tank.getCapability().cast());
+        containedFluidTooltip(tooltip, isPlayerSneaking, ctrl.oxidizerTank.getCapability().cast());
     }
 
     public FluidStack fluidStack() {
-        return tank.getPrimaryHandler().getFluid();
+        ThrusterBlockEntity ctrl = isController() ? this : getControllerBE();
+        if (ctrl == null) ctrl = this;
+        return ctrl.tank.getPrimaryHandler().getFluid();
     }
 
     public FluidStack oxidizerStack() {
-        return oxidizerTank.getPrimaryHandler().getFluid();
+        ThrusterBlockEntity ctrl = isController() ? this : getControllerBE();
+        if (ctrl == null) ctrl = this;
+        return ctrl.oxidizerTank.getPrimaryHandler().getFluid();
     }
 
     public boolean validFluid() {
@@ -150,18 +667,130 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity {
         return getFuelProperties(fluidStack().getRawFluid()) != null;
     }
 
-    //Hook for multiblock thrusters to gate operation on oxidizer presence.
-    //Single-block thrusters do not consume oxidizer and so do not call this yet.
     public boolean validOxidizer() {
-        return !oxidizerStack().isEmpty();
+        return isOxidizer(oxidizerStack());
     }
 
-    public FluidThrusterProperties getFuelProperties(Fluid fluid) {
+    public FluidThrusterProperties getFuelProperties(net.minecraft.world.level.material.Fluid fluid) {
         return ThrusterFuelManager.getProperties(fluid);
     }
 
     private int calculateFuelConsumption(float powerPercentage, float fluidPropertiesConsumptionMultiplier, int tick_rate) {
         float base_consumption = BASE_FUEL_CONSUMPTION * PropulsionConfig.THRUSTER_CONSUMPTION_MULTIPLIER.get().floatValue();
         return (int) Math.ceil(base_consumption * powerPercentage * fluidPropertiesConsumptionMultiplier * tick_rate);
+    }
+
+    @Override
+    protected double getNozzleOffsetFromCenter() {
+        return 0.95;
+    }
+
+    // =====================================================================
+    // IMultiBlockEntityContainer.Fluid -- minimal impl for Create tooling.
+    // Our own tryAssemble does the work; these methods let Create's generic
+    // handlers inspect us without special-casing.
+    // =====================================================================
+
+    @Override
+    public BlockPos getController() {
+        return isController() ? worldPosition : controllerPos;
+    }
+
+    @Override
+    public void setController(BlockPos pos) {
+        if (worldPosition.equals(pos)) {
+            controllerPos = null;
+        } else {
+            controllerPos = pos;
+        }
+        setChanged();
+        notifyUpdate();
+    }
+
+    @Override
+    public void removeController(boolean keepContents) {
+        if (isController() && isMultiblock()) disassembleMulti();
+    }
+
+    @Override
+    public BlockPos getLastKnownPos() {
+        return worldPosition;
+    }
+
+    @Override
+    public void preventConnectivityUpdate() {
+        updateConnectivity = false;
+    }
+
+    @Override
+    public void notifyMultiUpdated() {
+        setChanged();
+        notifyUpdate();
+    }
+
+    @Override
+    public Direction.Axis getMainConnectionAxis() {
+        BlockState state = getBlockState();
+        if (state.hasProperty(AbstractThrusterBlock.FACING)) {
+            return state.getValue(AbstractThrusterBlock.FACING).getAxis();
+        }
+        return Direction.Axis.Y;
+    }
+
+    @Override
+    public int getMaxLength(Direction.Axis axis, int w) {
+        return w; // cubes only
+    }
+
+    @Override
+    public int getMaxWidth() {
+        return MAX_WIDTH;
+    }
+
+    @Override
+    public int getHeight() {
+        return width;
+    }
+
+    @Override
+    public void setHeight(int h) {
+        // Height is forced to equal width (cube). Ignore.
+    }
+
+    @Override
+    public int getWidth() {
+        return width;
+    }
+
+    @Override
+    public void setWidth(int w) {
+        this.width = w;
+    }
+
+    @Override
+    public boolean hasTank() {
+        return true;
+    }
+
+    @Override
+    public int getTankSize(int t) {
+        return BASE_CAPACITY;
+    }
+
+    @Override
+    public void setTankSize(int t, int blocks) {
+        int cap = BASE_CAPACITY * blocks;
+        if (t == 0) tank.getPrimaryHandler().setCapacity(cap);
+        else oxidizerTank.getPrimaryHandler().setCapacity(cap);
+    }
+
+    @Override
+    public IFluidTank getTank(int t) {
+        return t == 0 ? tank.getPrimaryHandler() : oxidizerTank.getPrimaryHandler();
+    }
+
+    @Override
+    public FluidStack getFluid(int t) {
+        return getTank(t).getFluid().copy();
     }
 }
