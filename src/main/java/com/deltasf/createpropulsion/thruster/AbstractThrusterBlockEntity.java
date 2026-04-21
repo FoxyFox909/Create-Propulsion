@@ -42,7 +42,7 @@ public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity imple
     protected static final int TICKS_PER_ENTITY_CHECK = 5;
     private static final float PARTICLE_VELOCITY = 4;
     private static final double SHIP_VELOCITY_INHERITANCE = 0.5;
-    
+
     protected static final float LOWEST_POWER_THRESHOLD = 5.0f / 15.0f;
 
     //Common State
@@ -78,12 +78,12 @@ public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity imple
         if (!level.isClientSide) {
             BlockState state = getBlockState();
             calculateObstruction(level, worldPosition, state.getValue(AbstractThrusterBlock.FACING));
-            
+
             ThrusterForceAttachment ship = ThrusterForceAttachment.get(level, worldPosition);
             if (ship != null) {
                 ThrusterData data = this.getThrusterData();
                 data.setDirection(VectorConversionsMCKt.toJOMLD(state.getValue(AbstractThrusterBlock.FACING).getNormal()));
-                data.setThrust(0); 
+                data.setThrust(0);
                 ThrusterForceApplier applier = new ThrusterForceApplier(data);
                 ship.addApplier(worldPosition, applier);
             }
@@ -151,7 +151,7 @@ public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity imple
         if (this.isRemoved()) {
             return;
         }
-        //This part should ACTUALLY fix the issue with particle emission 
+        //This part should ACTUALLY fix the issue with particle emission
         if (level.getBlockState(worldPosition).getBlock() != this.getBlockState().getBlock()) {
             this.setRemoved();
             return;
@@ -230,27 +230,27 @@ public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity imple
     public void emitParticles(Level level, BlockPos pos, BlockState state) {
         if (emptyBlocks == 0) return;
         float power = getPower();
-    
+
         double particleCountMultiplier = org.joml.Math.clamp(0.0, 2.0, PropulsionConfig.THRUSTER_PARTICLE_COUNT_MULTIPLIER.get());
         if (particleCountMultiplier <= 0) return;
-    
+
         clientTick++;
         if (power < LOWEST_POWER_THRESHOLD && clientTick % 2 == 0) {
             clientTick = 0;
             return;
         }
-    
+
         this.particleSpawnAccumulator += particleCountMultiplier;
-    
+
         int particlesToSpawn = (int) this.particleSpawnAccumulator;
         if (particlesToSpawn == 0) return;
-    
+
         float visualPower = Math.max(power, LOWEST_POWER_THRESHOLD);
 
         this.particleSpawnAccumulator -= particlesToSpawn;
         Direction direction = state.getValue(AbstractThrusterBlock.FACING);
         Direction oppositeDirection = direction.getOpposite();
-    
+
         double currentNozzleOffset = getNozzleOffsetFromCenter();
         Vector3d additionalVel = new Vector3d();
         ClientShip ship = VSGameUtilsKt.getShipObjectManagingPos((ClientLevel) level, pos);
@@ -258,11 +258,11 @@ public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity imple
             Vector3dc shipWorldVelocityJOML = ship.getVelocity();
             Matrix4dc transform = ship.getRenderTransform().getShipToWorld();
             Matrix4dc invTransform = ship.getRenderTransform().getWorldToShip();
-    
+
             Vector3d shipVelocity = invTransform.transformDirection(new Vector3d(shipWorldVelocityJOML));
-    
+
             Vector3d particleEjectionUnitVecJOML = transform.transformDirection(VectorConversionsMCKt.toJOMLD(oppositeDirection.getNormal()));
-    
+
             double shipVelComponentAlongRotatedEjection = shipWorldVelocityJOML.dot(particleEjectionUnitVecJOML);
             if (shipVelComponentAlongRotatedEjection > 0.0) {
                 Vector3d normalizedVelocity = new Vector3d();
@@ -275,21 +275,21 @@ public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity imple
                 additionalVel = new Vector3d(shipVelocity).mul(SHIP_VELOCITY_INHERITANCE * effect);
             }
         }
-    
+
         double particleX = pos.getX() + 0.5 + oppositeDirection.getStepX() * currentNozzleOffset;
         double particleY = pos.getY() + 0.5 + oppositeDirection.getStepY() * currentNozzleOffset;
         double particleZ = pos.getZ() + 0.5 + oppositeDirection.getStepZ() * currentNozzleOffset;
-    
+
         Vector3d particleVelocity = new Vector3d(oppositeDirection.getStepX(), oppositeDirection.getStepY(), oppositeDirection.getStepZ())
-            .mul(PARTICLE_VELOCITY * visualPower).add(additionalVel);
-    
+                .mul(PARTICLE_VELOCITY * visualPower).add(additionalVel);
+
         ParticleOptions particleData = createParticleOptions();
 
         //Spawn the calculated number of particles.
         for (int i = 0; i < particlesToSpawn; i++) {
             level.addParticle(particleData, true,
-                particleX, particleY, particleZ,
-                particleVelocity.x, particleVelocity.y, particleVelocity.z);
+                    particleX, particleY, particleZ,
+                    particleVelocity.x, particleVelocity.y, particleVelocity.z);
         }
     }
 
@@ -325,12 +325,20 @@ public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity imple
     }
 
     protected void addThrusterDetails(List<Component> tooltip, boolean isPlayerSneaking) {
+        // Use getEmptyBlocks() (not the raw field) so multiblock subclasses
+        // can supply an aggregate value across the whole cube. Singles
+        // return their local field unchanged; multi controllers return the
+        // averaged nozzle-face-cell count (see
+        // ThrusterBlockEntity#getEmptyBlocks). This fixes rear/interior
+        // multiblock cells reporting stale "obstructed" readings on the
+        // goggle tooltip.
+        int empty = getEmptyBlocks();
         float efficiency = 100;
         ChatFormatting tooltipColor = ChatFormatting.GREEN;
-        if (emptyBlocks < OBSTRUCTION_LENGTH) {
+        if (empty < OBSTRUCTION_LENGTH) {
             efficiency = calculateObstructionEffect() * 100;
             tooltipColor = GoggleUtils.efficiencyColor(efficiency);
-            CreateLang.builder().add(Component.translatable("createpropulsion.gui.goggles.thruster.obstructed")).space().add(CreateLang.text(GoggleUtils.makeObstructionBar(emptyBlocks, OBSTRUCTION_LENGTH))).style(tooltipColor).forGoggles(tooltip);
+            CreateLang.builder().add(Component.translatable("createpropulsion.gui.goggles.thruster.obstructed")).space().add(CreateLang.text(GoggleUtils.makeObstructionBar(empty, OBSTRUCTION_LENGTH))).style(tooltipColor).forGoggles(tooltip);
         }
 
         CreateLang.builder().add(Component.translatable("createpropulsion.gui.goggles.thruster.efficiency")).text(": ").add(CreateLang.number(efficiency)).add(CreateLang.text("%")).style(tooltipColor).forGoggles(tooltip);
@@ -342,7 +350,7 @@ public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity imple
         super.write(compound, clientPacket);
         compound.putInt("emptyBlocks", emptyBlocks);
         compound.putInt("currentTick", currentTick);
-        
+
         compound.putInt("RedstoneInput", redstoneInput);
         compound.putFloat("DigitalInput", digitalInput);
         compound.putInt("ControlMode", controlMode.ordinal());

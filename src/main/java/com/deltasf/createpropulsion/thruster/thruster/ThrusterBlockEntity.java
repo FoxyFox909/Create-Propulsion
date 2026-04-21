@@ -807,11 +807,15 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
                 // the combined wrapper so those still work.
                 return ctrl.getMultiFluidCapability().cast();
             }
-            // Single-block behavior: unchanged (fuel on FACING, oxidizer on
-            // the opposite face). Existing worlds with pipes already hooked
-            // up keep working without re-plumbing.
+            // Single-block behavior: only fuel is accepted. The oxidizer
+            // capability is intentionally NOT exposed here, even though
+            // the behaviour is still attached to the BE -- singles do not
+            // consume oxidizer and exposing the cap would let pipes fill
+            // a tank whose contents the thruster never reads. Any leftover
+            // oxidizer from a prior disassembleMulti() stays dormant in
+            // the private tank until the cell re-forms into a cube, at
+            // which point formMulti() harvests it back into the aggregate.
             if (side == getFluidCapSide()) return tank.getCapability().cast();
-            if (side == getOxidizerCapSide()) return oxidizerTank.getCapability().cast();
         }
         if (PropulsionCompatibility.CC_ACTIVE && computerBehaviour.isPeripheralCap(cap)) {
             return computerBehaviour.getPeripheralCapability().cast();
@@ -878,9 +882,10 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
         return getBlockState().getValue(ThrusterBlock.FACING);
     }
 
-    protected Direction getOxidizerCapSide() {
-        return getBlockState().getValue(ThrusterBlock.FACING).getOpposite();
-    }
+    // getOxidizerCapSide() used to designate the single-block oxidizer
+    // input face, but singles no longer accept oxidizer (see getCapability)
+    // so the helper is gone. Multiblocks route oxidizer via isOxidizerFace
+    // instead.
 
     /** Per-block fuel consumption multiplier for a multiblock of the given
      *  cube width. Returns 1.0 for anything other than the supported cube
@@ -964,6 +969,30 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
     // Goggles + helpers
     // =====================================================================
 
+    /**
+     * Goggle entry point. Slaves redirect the whole tooltip call to the
+     * controller: status line, obstruction readout, size, fluid tanks --
+     * everything. Without this redirect, a player aiming at a rear or
+     * interior cell would see that cell's stale private state (obstruction
+     * never re-scans for non-nozzle cells, controlMode isn't the
+     * controller's, etc.) instead of the cube's real status.
+     *
+     * <p>The controller runs the normal path and its override of
+     * {@link #getGoggleStatus} and {@link #addThrusterDetails} pulls
+     * aggregate values via {@link #getEmptyBlocks} and
+     * {@link #calculateObstructionEffect}.
+     */
+    @Override
+    public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
+        if (!isController() && isMultiblock()) {
+            ThrusterBlockEntity ctrl = getControllerBE();
+            if (ctrl != null && ctrl != this) {
+                return ctrl.addToGoggleTooltip(tooltip, isPlayerSneaking);
+            }
+        }
+        return super.addToGoggleTooltip(tooltip, isPlayerSneaking);
+    }
+
     @Override
     protected LangBuilder getGoggleStatus() {
         if (!isController()) {
@@ -978,7 +1007,11 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
             return CreateLang.builder().add(Component.translatable("createpropulsion.gui.goggles.thruster.status.no_oxidizer")).style(ChatFormatting.RED);
         } else if (!isPowered()) {
             return CreateLang.builder().add(Component.translatable("createpropulsion.gui.goggles.thruster.status.not_powered")).style(ChatFormatting.GOLD);
-        } else if (emptyBlocks == 0) {
+        } else if (getEmptyBlocks() == 0) {
+            // getEmptyBlocks() (not the raw field) so multi controllers see
+            // the aggregate across nozzle-face cells. See comment on
+            // AbstractThrusterBlockEntity.addThrusterDetails for the same
+            // reason.
             return CreateLang.builder().add(Component.translatable("createpropulsion.gui.goggles.thruster.obstructed")).style(ChatFormatting.RED);
         } else {
             return CreateLang.builder().add(Component.translatable("createpropulsion.gui.goggles.thruster.status.working")).style(ChatFormatting.GREEN);
@@ -998,9 +1031,47 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
                     .text(": " + ctrl.width + "x" + ctrl.width + "x" + ctrl.width)
                     .style(ChatFormatting.GRAY)
                     .forGoggles(tooltip);
+            // Bulk bonus line: shown only when the cube actually saves on
+            // at least one reagent (efficiency < 1.0). Savings are
+            // presented as negative percentages ("-20% fuel") to read as a
+            // discount rather than an efficiency coefficient. Fuel-only
+            // cubes (2x2x2 at defaults) show one fragment; cubes that
+            // discount both (3x3x3 at defaults) show both fragments
+            // separated by a comma. If someone tunes config so there is
+            // no discount at any tier, the line is suppressed entirely.
+            float fuelEff = getMultiblockFuelEfficiency(ctrl.width);
+            float oxEff = getMultiblockOxidizerEfficiency(ctrl.width);
+            int fuelSavePct = Math.round((1.0f - fuelEff) * 100.0f);
+            int oxSavePct = Math.round((1.0f - oxEff) * 100.0f);
+            if (fuelSavePct > 0 || oxSavePct > 0) {
+                StringBuilder savings = new StringBuilder(": ");
+                boolean first = true;
+                if (fuelSavePct > 0) {
+                    savings.append("-").append(fuelSavePct).append("% fuel");
+                    first = false;
+                }
+                if (oxSavePct > 0) {
+                    if (!first) savings.append(", ");
+                    savings.append("-").append(oxSavePct).append("% oxidizer");
+                }
+                CreateLang.builder()
+                        .add(Component.translatable("createpropulsion.gui.goggles.thruster.bulk_bonus"))
+                        .text(savings.toString())
+                        .style(ChatFormatting.DARK_AQUA)
+                        .forGoggles(tooltip);
+            }
         }
         containedFluidTooltip(tooltip, isPlayerSneaking, ctrl.tank.getCapability().cast());
-        containedFluidTooltip(tooltip, isPlayerSneaking, ctrl.oxidizerTank.getCapability().cast());
+        // Oxidizer is a multiblock-only concept -- singles don't consume it
+        // and (as of this revision) can't accept it via pipes either, so
+        // hiding the tooltip line keeps the goggle view in sync with the
+        // actual behavior. A lone thruster that still has leftover oxidizer
+        // in its tank from a prior disassembly will get it back when it
+        // re-forms into a cube; until then, the fluid sits idle and the
+        // tooltip just omits it.
+        if (ctrl.isMultiblock()) {
+            containedFluidTooltip(tooltip, isPlayerSneaking, ctrl.oxidizerTank.getCapability().cast());
+        }
     }
 
     public FluidStack fluidStack() {
