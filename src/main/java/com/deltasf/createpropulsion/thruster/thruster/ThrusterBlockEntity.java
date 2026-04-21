@@ -426,11 +426,17 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
             float thrustPercentage = Math.min(currentPower, obstructionEffect);
             if (thrustPercentage > 0 && properties != null) {
                 int tickRate = PropulsionConfig.THRUSTER_TICKS_PER_UPDATE.get();
-                int fuelNeeded = calculateFuelConsumption(currentPower, properties.consumptionMultiplier, tickRate) * n;
-                // Oxidizer burns 1:1 with fuel by default. The consumption
-                // multiplier is shared -- if the fuel is cheap, the matching
-                // oxidizer draw is also cheap.
-                int oxNeeded = fuelNeeded;
+                int baseConsumption = calculateFuelConsumption(currentPower, properties.consumptionMultiplier, tickRate);
+                // Bulk-efficiency discount: bigger cubes convert fuel+oxidizer
+                // to thrust more efficiently on a per-block basis. Thrust
+                // output still scales linearly with n below, so thrust-per-
+                // fuel improves monotonically with cube size. At width==1
+                // the singles code path handles consumption (and oxidizer is
+                // not required), so width here is always 2 or 3 in practice.
+                float fuelEff = getMultiblockFuelEfficiency(width);
+                float oxEff = getMultiblockOxidizerEfficiency(width);
+                int fuelNeeded = (int) Math.ceil(baseConsumption * (double) n * fuelEff);
+                int oxNeeded = (int) Math.ceil(baseConsumption * (double) n * oxEff);
 
                 // Simulate drains first so a shortfall in either fluid doesn't
                 // waste the other.
@@ -943,6 +949,28 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
     private int calculateFuelConsumption(float powerPercentage, float fluidPropertiesConsumptionMultiplier, int tick_rate) {
         float base_consumption = BASE_FUEL_CONSUMPTION * PropulsionConfig.THRUSTER_CONSUMPTION_MULTIPLIER.get().floatValue();
         return (int) Math.ceil(base_consumption * powerPercentage * fluidPropertiesConsumptionMultiplier * tick_rate);
+    }
+
+    /** Per-block fuel consumption multiplier for a multiblock of the given
+     *  cube width. Returns 1.0 for anything other than the supported cube
+     *  sizes so future width values (or width==1 called by mistake) behave
+     *  as a no-op instead of crashing on a missing config key. */
+    private static float getMultiblockFuelEfficiency(int cubeWidth) {
+        if (cubeWidth == 2) return PropulsionConfig.THRUSTER_MULTIBLOCK_2X2X2_FUEL_EFFICIENCY.get().floatValue();
+        if (cubeWidth == 3) return PropulsionConfig.THRUSTER_MULTIBLOCK_3X3X3_FUEL_EFFICIENCY.get().floatValue();
+        return 1.0f;
+    }
+
+    /** Per-block oxidizer consumption multiplier for a multiblock of the
+     *  given cube width. Applied to the same baseline as fuel (i.e., the
+     *  single's fuel draw), not to actual fuel consumed -- this decouples
+     *  oxidizer efficiency from fuel efficiency so 3x3x3 can be cheaper in
+     *  both reagents without compound math, and so a shortfall of one
+     *  doesn't retroactively change the demand for the other. */
+    private static float getMultiblockOxidizerEfficiency(int cubeWidth) {
+        if (cubeWidth == 2) return PropulsionConfig.THRUSTER_MULTIBLOCK_2X2X2_OXIDIZER_EFFICIENCY.get().floatValue();
+        if (cubeWidth == 3) return PropulsionConfig.THRUSTER_MULTIBLOCK_3X3X3_OXIDIZER_EFFICIENCY.get().floatValue();
+        return 1.0f;
     }
 
     @Override
