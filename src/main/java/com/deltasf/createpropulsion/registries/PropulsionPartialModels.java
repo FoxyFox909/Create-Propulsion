@@ -1,12 +1,11 @@
 package com.deltasf.createpropulsion.registries;
 
-import java.util.HashMap;
-import java.util.Map;
-
 import com.deltasf.createpropulsion.CreatePropulsion;
-
 import dev.engine_room.flywheel.lib.model.baked.PartialModel;
 import net.minecraft.resources.ResourceLocation;
+
+import java.util.HashMap;
+import java.util.Map;
 
 public class PropulsionPartialModels {
     public static final Map<String, PartialModel> BLADE_MODELS = new HashMap<>();
@@ -33,6 +32,13 @@ public class PropulsionPartialModels {
     public static final PartialModel TILT_ADAPTER_SIDE_INDICATOR = partial("tilt_adapter_side_overlay");
     //Creative thruster
     public static final PartialModel CREATIVE_THRUSTER_BRACKET = partial("creative_thruster_bracket");
+    //Multiblock thruster
+    // Authored in normal [0,16] block-model coords as if they were a 1x1x1
+    // model. ThrusterRenderer scales by cube width at draw time, so the same
+    // file stretches to cover the full multiblock. Modders replacing these
+    // models should keep their authoring coords in [0,16].
+    public static final PartialModel THRUSTER_MULTIBLOCK_2X2X2 = partial("thruster_multiblock_2x2x2");
+    public static final PartialModel THRUSTER_MULTIBLOCK_3X3X3 = partial("thruster_multiblock_3x3x3");
     //Transmission
     public static final PartialModel TRANSMISSION_PLUS = partial("transmission_plus");
     public static final PartialModel TRANSMISSION_MINUS = partial("transmission_minus");
@@ -50,6 +56,7 @@ public class PropulsionPartialModels {
         BLADE_MODELS.put(CreatePropulsion.ID + ":block/" + path, model);
         return model;
     }
+
 
     public static void register() {}
 }

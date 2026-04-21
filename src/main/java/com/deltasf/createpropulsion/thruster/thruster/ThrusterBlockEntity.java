@@ -26,6 +26,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.common.util.LazyOptional;
@@ -142,6 +143,28 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
         if (isController() || !hasLevel()) return this;
         BlockEntity be = level.getBlockEntity(controllerPos);
         return be instanceof ThrusterBlockEntity t ? t : null;
+    }
+
+    /**
+     * Chunk-culling bounds for the BER. A single controller is a 1x1x1 cube
+     * at its position; a multi controller's BER draws a scaled model that
+     * covers width^3 blocks starting at this position, so the render AABB
+     * must span the whole cube or chunk culling will clip the rear half of
+     * the model whenever the player looks at the cube from the side.
+     *
+     * Slaves render nothing (see ThrusterRenderer), so their bounding box
+     * can stay at the default 1x1x1 -- we only grow it for controllers.
+     */
+    @Override
+    public AABB getRenderBoundingBox() {
+        if (isController() && isMultiblock()) {
+            return new AABB(
+                    worldPosition.getX(), worldPosition.getY(), worldPosition.getZ(),
+                    worldPosition.getX() + width,
+                    worldPosition.getY() + width,
+                    worldPosition.getZ() + width);
+        }
+        return super.getRenderBoundingBox();
     }
 
     @Override
@@ -264,6 +287,26 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
             t.width = size;
             t.invalidateMultiCap();
             t.isThrustDirty = true;
+            // Flip the cosmetic MULTIBLOCK blockstate property so the cell's
+            // per-block model swaps to the empty model. The controller's BER
+            // draws the purpose-made multiblock model in place of the now-
+            // invisible cells. Using UPDATE_CLIENTS only -- no neighbor or
+            // block updates -- because this change is purely visual and we
+            // don't want to re-trigger redstone checks for every cell on the
+            // same tick we're already mid-assembly. We read the LIVE world
+            // state via level.getBlockState(pos) rather than the BE's
+            // cached getBlockState() so this is robust against any caller
+            // that might invoke formMulti while the world is mid-
+            // transition (same defensive pattern as disassembleMulti).
+            BlockPos cellPos = t.getBlockPos();
+            BlockState liveState = level.getBlockState(cellPos);
+            if (liveState.getBlock() instanceof ThrusterBlock
+                    && liveState.hasProperty(ThrusterBlock.MULTIBLOCK)
+                    && !liveState.getValue(ThrusterBlock.MULTIBLOCK)) {
+                level.setBlock(cellPos,
+                        liveState.setValue(ThrusterBlock.MULTIBLOCK, true),
+                        Block.UPDATE_CLIENTS);
+            }
             t.setChanged();
             t.notifyUpdate();
         }
@@ -341,6 +384,28 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
                     // Zero out thrust so slaves don't keep applying force
                     // after the multi breaks.
                     t.thrusterData.setThrust(0);
+                    // Flip the cosmetic MULTIBLOCK blockstate property back
+                    // off so each cell's single-block model returns. See
+                    // formMulti for the symmetrical flip-on.
+                    //
+                    // CRITICAL: disassembleMulti runs from onRemove when a
+                    // player breaks one of the cells. At that moment, the
+                    // broken cell's world state may already have been
+                    // swapped to air mid-transition. We must read the LIVE
+                    // world state via level.getBlockState(pos) -- NOT the
+                    // BE's cached t.getBlockState() -- and only setBlock if
+                    // it is still our thruster. Otherwise we would re-place
+                    // a thruster block on top of the one the player just
+                    // broke, making the block effectively unbreakable (each
+                    // break triggers a re-place through this path).
+                    BlockState liveState = level.getBlockState(pos);
+                    if (liveState.getBlock() instanceof ThrusterBlock
+                            && liveState.hasProperty(ThrusterBlock.MULTIBLOCK)
+                            && liveState.getValue(ThrusterBlock.MULTIBLOCK)) {
+                        level.setBlock(pos,
+                                liveState.setValue(ThrusterBlock.MULTIBLOCK, false),
+                                Block.UPDATE_CLIENTS);
+                    }
                     t.setChanged();
                     t.notifyUpdate();
                 }
@@ -426,17 +491,11 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
             float thrustPercentage = Math.min(currentPower, obstructionEffect);
             if (thrustPercentage > 0 && properties != null) {
                 int tickRate = PropulsionConfig.THRUSTER_TICKS_PER_UPDATE.get();
-                int baseConsumption = calculateFuelConsumption(currentPower, properties.consumptionMultiplier, tickRate);
-                // Bulk-efficiency discount: bigger cubes convert fuel+oxidizer
-                // to thrust more efficiently on a per-block basis. Thrust
-                // output still scales linearly with n below, so thrust-per-
-                // fuel improves monotonically with cube size. At width==1
-                // the singles code path handles consumption (and oxidizer is
-                // not required), so width here is always 2 or 3 in practice.
-                float fuelEff = getMultiblockFuelEfficiency(width);
-                float oxEff = getMultiblockOxidizerEfficiency(width);
-                int fuelNeeded = (int) Math.ceil(baseConsumption * (double) n * fuelEff);
-                int oxNeeded = (int) Math.ceil(baseConsumption * (double) n * oxEff);
+                int fuelNeeded = calculateFuelConsumption(currentPower, properties.consumptionMultiplier, tickRate) * n;
+                // Oxidizer burns 1:1 with fuel by default. The consumption
+                // multiplier is shared -- if the fuel is cheap, the matching
+                // oxidizer draw is also cheap.
+                int oxNeeded = fuelNeeded;
 
                 // Simulate drains first so a shortfall in either fluid doesn't
                 // waste the other.
@@ -949,28 +1008,6 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
     private int calculateFuelConsumption(float powerPercentage, float fluidPropertiesConsumptionMultiplier, int tick_rate) {
         float base_consumption = BASE_FUEL_CONSUMPTION * PropulsionConfig.THRUSTER_CONSUMPTION_MULTIPLIER.get().floatValue();
         return (int) Math.ceil(base_consumption * powerPercentage * fluidPropertiesConsumptionMultiplier * tick_rate);
-    }
-
-    /** Per-block fuel consumption multiplier for a multiblock of the given
-     *  cube width. Returns 1.0 for anything other than the supported cube
-     *  sizes so future width values (or width==1 called by mistake) behave
-     *  as a no-op instead of crashing on a missing config key. */
-    private static float getMultiblockFuelEfficiency(int cubeWidth) {
-        if (cubeWidth == 2) return PropulsionConfig.THRUSTER_MULTIBLOCK_2X2X2_FUEL_EFFICIENCY.get().floatValue();
-        if (cubeWidth == 3) return PropulsionConfig.THRUSTER_MULTIBLOCK_3X3X3_FUEL_EFFICIENCY.get().floatValue();
-        return 1.0f;
-    }
-
-    /** Per-block oxidizer consumption multiplier for a multiblock of the
-     *  given cube width. Applied to the same baseline as fuel (i.e., the
-     *  single's fuel draw), not to actual fuel consumed -- this decouples
-     *  oxidizer efficiency from fuel efficiency so 3x3x3 can be cheaper in
-     *  both reagents without compound math, and so a shortfall of one
-     *  doesn't retroactively change the demand for the other. */
-    private static float getMultiblockOxidizerEfficiency(int cubeWidth) {
-        if (cubeWidth == 2) return PropulsionConfig.THRUSTER_MULTIBLOCK_2X2X2_OXIDIZER_EFFICIENCY.get().floatValue();
-        if (cubeWidth == 3) return PropulsionConfig.THRUSTER_MULTIBLOCK_3X3X3_OXIDIZER_EFFICIENCY.get().floatValue();
-        return 1.0f;
     }
 
     @Override
