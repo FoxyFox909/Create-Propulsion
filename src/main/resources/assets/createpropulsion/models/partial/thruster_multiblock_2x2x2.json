@@ -1,22 +1,49 @@
 {
 	"format_version": "1.21.6",
 	"credit": "Placeholder geometry — replace with final multiblock model",
+	"texture_size": [128, 128],
 	"textures": {
-		"1": "createpropulsion:block/thruster_multiblock_2x2x2",
+		"3": "createpropulsion:block/thruster_2x2x2",
 		"particle": "createpropulsion:block/thruster_multiblock_2x2x2"
 	},
 	"elements": [
 		{
-			"name": "placeholder_hull",
+			"name": "hull",
 			"from": [1, 1, 1],
-			"to": [15, 15, 15],
+			"to": [15, 15, 8],
 			"faces": {
-				"north": {"uv": [0.25, 0.25, 0.75, 0.75], "texture": "#1"},
-				"east": {"uv": [1.25, 0.25, 1.75, 0.75], "texture": "#1"},
-				"south": {"uv": [2.25, 0.25, 2.75, 0.75], "texture": "#1"},
-				"west": {"uv": [3.25, 0.25, 3.75, 0.75], "texture": "#1"},
-				"up": {"uv": [4.25, 0.25, 4.75, 0.75], "texture": "#1"},
-				"down": {"uv": [5.25, 0.25, 5.75, 0.75], "texture": "#1"}
+				"north": {"uv": [4.125, 4.125, 7.625, 7.625], "texture": "#3"},
+				"east": {"uv": [1.75, 0, 0, 3.5], "texture": "#3"},
+				"south": {"uv": [11.125, 10.625, 12.625, 14.125], "texture": "#3"},
+				"west": {"uv": [0, 0, 1.75, 3.5], "texture": "#3"},
+				"up": {"uv": [0, 0, 1.75, 3.5], "rotation": 90, "texture": "#3"},
+				"down": {"uv": [0, 0, 1.75, 3.5], "rotation": 270, "texture": "#3"}
+			}
+		},
+		{
+			"name": "copper_part",
+			"from": [0, 0, 8],
+			"to": [16, 16, 16],
+			"faces": {
+				"north": {"uv": [0, 4.125, 4, 8.125], "texture": "#3"},
+				"east": {"uv": [3.875, 0, 1.875, 4], "texture": "#3"},
+				"south": {"uv": [0, 4.125, 4, 8.125], "texture": "#3"},
+				"west": {"uv": [1.875, 0, 3.875, 4], "texture": "#3"},
+				"up": {"uv": [1.875, 0, 3.875, 4], "rotation": 90, "texture": "#3"},
+				"down": {"uv": [3.875, 0, 1.875, 4], "rotation": 90, "texture": "#3"}
+			}
+		},
+		{
+			"name": "nozzle",
+			"from": [2.5, 2.5, -2],
+			"to": [13.5, 13.5, 1],
+			"faces": {
+				"north": {"uv": [2.875, 8.25, 5.625, 11], "texture": "#3"},
+				"east": {"uv": [0, 8.25, 2.75, 9], "rotation": 270, "texture": "#3"},
+				"south": {"uv": [7.75, 9.375, 9.125, 10.75], "texture": "#3"},
+				"west": {"uv": [0, 8.25, 2.75, 9], "rotation": 90, "texture": "#3"},
+				"up": {"uv": [0, 8.25, 2.75, 9], "rotation": 180, "texture": "#3"},
+				"down": {"uv": [0, 8.25, 2.75, 9], "texture": "#3"}
 			}
 		}
 	]
