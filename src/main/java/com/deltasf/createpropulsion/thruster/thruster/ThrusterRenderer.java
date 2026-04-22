@@ -114,15 +114,31 @@ public class ThrusterRenderer extends SmartBlockEntityRenderer<ThrusterBlockEnti
      * and angles identical to the JSON means a modder authoring a
      * multiblock model only needs to match the single-block model's
      * orientation to get all six facings right.
+     *
+     * <p>Sign convention: Minecraft's blockstate JSON "y"/"x" rotations are
+     * applied via {@code BlockModelRotation}, which builds its quaternion
+     * from the NEGATED angles ({@code rotateYXZ(-yRot, -xRot, 0)}). That is,
+     * JSON {@code "y": 90} rotates the model in the opposite sense from a
+     * naive {@code Axis.YP.rotationDegrees(+90)}. Using the positive angles
+     * here would therefore render the multiblock model 180 degrees off for
+     * any facing where the rotation isn't self-inverse -- visibly, the
+     * cube's front and back ended up swapped on EAST/WEST (and
+     * symmetrically on UP/DOWN). NORTH (identity) and SOUTH (180 degrees,
+     * self-inverse) happen to render the same either way.
+     *
+     * <p>We negate here so the BER's rotations match JSON semantics. The
+     * single-block model (authored with its nozzle protruding toward +Z)
+     * and the multiblock model (authored the same way) then orient
+     * consistently across all six facings.
      */
     private static void applyFacingRotation(PoseStack ms, Direction facing) {
         switch (facing) {
             case NORTH -> { /* identity */ }
-            case SOUTH -> ms.mulPose(Axis.YP.rotationDegrees(180));
-            case WEST  -> ms.mulPose(Axis.YP.rotationDegrees(270));
-            case EAST  -> ms.mulPose(Axis.YP.rotationDegrees(90));
-            case UP    -> ms.mulPose(Axis.XP.rotationDegrees(270));
-            case DOWN  -> ms.mulPose(Axis.XP.rotationDegrees(90));
+            case SOUTH -> ms.mulPose(Axis.YP.rotationDegrees(-180));
+            case WEST  -> ms.mulPose(Axis.YP.rotationDegrees(-270));
+            case EAST  -> ms.mulPose(Axis.YP.rotationDegrees(-90));
+            case UP    -> ms.mulPose(Axis.XP.rotationDegrees(-270));
+            case DOWN  -> ms.mulPose(Axis.XP.rotationDegrees(-90));
         }
     }
 }

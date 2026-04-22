@@ -595,7 +595,7 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
     // 2 pixels (2/16 of a block) is subtle enough to read as polish rather
     // than a geometry change, while still being noticeable side-by-side
     // with the pre-change layout.
-    private static final double MULTIBLOCK_PARTICLE_INWARD_OFFSET = 6.0 / 16.0;
+    private static final double MULTIBLOCK_PARTICLE_INWARD_OFFSET = 4.0 / 16.0;
 
     /** Perpendicular nudge of each multiblock cell's plume toward the cube
      *  axis. Returns (0,0,0) for single thrusters and for the geometric
