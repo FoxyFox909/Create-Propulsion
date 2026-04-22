@@ -788,24 +788,42 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
                 ThrusterBlockEntity ctrl = getControllerBE();
                 if (ctrl == null) return LazyOptional.empty();
                 Direction cubeFacing = ctrl.getBlockState().getValue(AbstractThrusterBlock.FACING);
+                // side == null is a non-directional query (goggles, JEI
+                // previews, things that just want to read contents). Hand out
+                // the combined wrapper so those still work on ANY cell of the
+                // cube -- the front-layer gating below is strictly for
+                // directional (pipe) queries, and must not break the ability
+                // to inspect a multi by looking at any of its cells.
+                if (side == null) return ctrl.getMultiFluidCapability().cast();
+                // Pipe inputs are restricted to the cube's front layer: the
+                // slice of cells on the FACING side of the cube (the intake
+                // side, opposite the nozzle). For a 3x3x3 that's 9 cells, for
+                // a 2x2x2 that's 4. Cells behind the front layer (interior
+                // cells and nozzle-side cells) expose no fluid capability on
+                // any face, so Create pipes cannot attach fuel or oxidizer
+                // lines to them. Front-layer cells still route fuel vs.
+                // oxidizer via the same side-to-tank mapping used previously,
+                // meaning all non-nozzle-pointing external faces of those
+                // front cells accept pipes.
+                if (!isFrontLayerCell(ctrl, cubeFacing)) return LazyOptional.empty();
                 // The nozzle face never accepts fluids -- that's where the
                 // exhaust exits. FACING is the thrust direction; exhaust
-                // comes out the OPPOSITE side.
+                // comes out the OPPOSITE side. For a front-layer cell this
+                // side always points inward at the neighbor cell behind it,
+                // so in practice a pipe can't physically connect here
+                // anyway, but we keep the guard for clarity and defense.
                 if (side == cubeFacing.getOpposite()) return LazyOptional.empty();
                 // Oxidizer lanes: Top/Bottom for horizontal thrusters, or the
                 // Z pair (north/south) for vertical-facing thrusters.
-                if (side != null && isOxidizerFace(side, cubeFacing)) {
+                if (isOxidizerFace(side, cubeFacing)) {
                     return ctrl.oxidizerTank.getCapability().cast();
                 }
                 // Fuel lanes: Left, Right, and Front (the side opposite the
                 // nozzle -- which is the FACING side).
-                if (side != null && isFuelFace(side, cubeFacing)) {
+                if (isFuelFace(side, cubeFacing)) {
                     return ctrl.tank.getCapability().cast();
                 }
-                // side == null is a non-directional query (goggles, JEI
-                // previews, things that just want to read contents). Hand out
-                // the combined wrapper so those still work.
-                return ctrl.getMultiFluidCapability().cast();
+                return LazyOptional.empty();
             }
             // Single-block behavior: only fuel is accepted. The oxidizer
             // capability is intentionally NOT exposed here, even though
@@ -821,6 +839,39 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
             return computerBehaviour.getPeripheralCapability().cast();
         }
         return super.getCapability(cap, side);
+    }
+
+    /** True iff this cell is in the cube's front layer -- i.e. the slice
+     *  of cells at the FACING extreme of the cube. For a cube facing NORTH
+     *  (-Z) the front layer is the Z=0 slice relative to the controller's
+     *  origin; for a cube facing EAST (+X) it is the X=size-1 slice; and
+     *  so on. The front layer is where Create pipes are allowed to push
+     *  fluids in; all other cells (interior and nozzle-side) expose no
+     *  fluid capability to directional queries.
+     *
+     *  Uses the live world position of THIS cell relative to the
+     *  controller's origin rather than any cached cube-local index, so it
+     *  is robust to the mod's own relocation path (PhysicsAssembler copies
+     *  BEs to new shipyard coordinates while keeping the multi intact --
+     *  the origin moves with them, so the relative test still holds). */
+    private boolean isFrontLayerCell(ThrusterBlockEntity ctrl, Direction cubeFacing) {
+        if (ctrl == null) return false;
+        BlockPos origin = ctrl.getController();
+        int size = ctrl.width;
+        int rel;
+        switch (cubeFacing.getAxis()) {
+            case X: rel = worldPosition.getX() - origin.getX(); break;
+            case Y: rel = worldPosition.getY() - origin.getY(); break;
+            case Z: rel = worldPosition.getZ() - origin.getZ(); break;
+            default: return false;
+        }
+        // Origin is the lowest-corner of the cube, so relative coords run
+        // 0..size-1. "Front" is the FACING extreme: size-1 when FACING
+        // points along the positive axis direction, 0 when negative.
+        int frontIdx = (cubeFacing.getAxisDirection() == Direction.AxisDirection.POSITIVE)
+                ? size - 1
+                : 0;
+        return rel == frontIdx;
     }
 
     /** True iff `side` is one of the two faces designated for oxidizer inflow
