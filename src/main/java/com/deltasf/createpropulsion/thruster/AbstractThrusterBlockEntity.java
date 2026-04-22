@@ -225,6 +225,19 @@ public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity imple
         return new PlumeParticleData((ParticleType<PlumeParticleData>) ParticleTypes.getPlumeType());
     }
 
+    /** Optional extra offset applied to the particle spawn position, in
+     *  block-space. Default: zero. Subclasses can override to shift where
+     *  plumes originate without affecting their velocity or ejection
+     *  direction. Used by multiblock thrusters to draw per-cell plumes a
+     *  few pixels toward the cube's axis.
+     *
+     *  @param oppositeDirection the exhaust direction (FACING.getOpposite()),
+     *                           passed so overrides can reason about which
+     *                           axes are perpendicular to the nozzle. */
+    protected Vector3d getExtraParticleOriginOffset(Direction oppositeDirection) {
+        return new Vector3d();
+    }
+
     protected abstract double getNozzleOffsetFromCenter();
 
     public void emitParticles(Level level, BlockPos pos, BlockState state) {
@@ -276,9 +289,15 @@ public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity imple
             }
         }
 
-        double particleX = pos.getX() + 0.5 + oppositeDirection.getStepX() * currentNozzleOffset;
-        double particleY = pos.getY() + 0.5 + oppositeDirection.getStepY() * currentNozzleOffset;
-        double particleZ = pos.getZ() + 0.5 + oppositeDirection.getStepZ() * currentNozzleOffset;
+        // Optional perpendicular nudge supplied by subclasses (used by
+        // multiblock thrusters to pull per-cell plumes a little toward the
+        // cube's axis for a cleaner silhouette). Singles override nothing
+        // and get (0, 0, 0) here, preserving exact pre-existing positions.
+        Vector3d extraOriginOffset = getExtraParticleOriginOffset(oppositeDirection);
+
+        double particleX = pos.getX() + 0.5 + oppositeDirection.getStepX() * currentNozzleOffset + extraOriginOffset.x;
+        double particleY = pos.getY() + 0.5 + oppositeDirection.getStepY() * currentNozzleOffset + extraOriginOffset.y;
+        double particleZ = pos.getZ() + 0.5 + oppositeDirection.getStepZ() * currentNozzleOffset + extraOriginOffset.z;
 
         Vector3d particleVelocity = new Vector3d(oppositeDirection.getStepX(), oppositeDirection.getStepY(), oppositeDirection.getStepZ())
                 .mul(PARTICLE_VELOCITY * visualPower).add(additionalVel);

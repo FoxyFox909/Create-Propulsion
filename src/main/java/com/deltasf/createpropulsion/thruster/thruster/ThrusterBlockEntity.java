@@ -35,6 +35,7 @@ import net.minecraftforge.fluids.IFluidTank;
 import net.minecraftforge.fluids.capability.IFluidHandler;
 import net.minecraftforge.fluids.capability.IFluidHandler.FluidAction;
 import net.minecraftforge.registries.ForgeRegistries;
+import org.joml.Vector3d;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -581,6 +582,70 @@ public class ThrusterBlockEntity extends AbstractThrusterBlockEntity
         int dz = exhaustExit.getZ() - origin.getZ();
         boolean inside = dx >= 0 && dx < s && dy >= 0 && dy < s && dz >= 0 && dz < s;
         return !inside;
+    }
+
+    // Pulling a multiblock's per-cell plumes a fixed few pixels toward the
+    // cube's axis tightens up the visual grouping:
+    //   * 2x2x2: the 4 corner plumes each pull inward diagonally, so they
+    //     read as one clustered exhaust rather than four independent ones.
+    //   * 3x3x3: the center cell's plume stays put (its vector to the axis
+    //     is zero, short-circuited below); the 8 surrounding plumes -- 4
+    //     edge-midpoints and 4 corners -- all pull inward by the same fixed
+    //     magnitude, so the outer ring visibly closes in on the center.
+    // 2 pixels (2/16 of a block) is subtle enough to read as polish rather
+    // than a geometry change, while still being noticeable side-by-side
+    // with the pre-change layout.
+    private static final double MULTIBLOCK_PARTICLE_INWARD_OFFSET = 6.0 / 16.0;
+
+    /** Perpendicular nudge of each multiblock cell's plume toward the cube
+     *  axis. Returns (0,0,0) for single thrusters and for the geometric
+     *  center cell of an odd-width cube (the 3x3x3's middle), leaving
+     *  those visuals unchanged. For every other multiblock cell, returns a
+     *  vector of length {@link #MULTIBLOCK_PARTICLE_INWARD_OFFSET} aimed
+     *  at the cube's central axis -- same magnitude for edges and corners,
+     *  so a 3x3x3's outer ring tightens uniformly. The component along the
+     *  nozzle axis is zeroed: the offset only moves particles sideways, not
+     *  forward or back, so they still exit the nozzle plane correctly. */
+    @Override
+    protected Vector3d getExtraParticleOriginOffset(Direction oppositeDirection) {
+        if (!isMultiblock()) return super.getExtraParticleOriginOffset(oppositeDirection);
+        ThrusterBlockEntity ctrl = getControllerBE();
+        if (ctrl == null) return super.getExtraParticleOriginOffset(oppositeDirection);
+        int size = ctrl.width;
+        if (size <= 1) return super.getExtraParticleOriginOffset(oppositeDirection);
+
+        // Cell's position within the cube in local coords (0..size-1 per axis).
+        BlockPos origin = ctrl.worldPosition;
+        double lx = worldPosition.getX() - origin.getX();
+        double ly = worldPosition.getY() - origin.getY();
+        double lz = worldPosition.getZ() - origin.getZ();
+
+        // Vector from this cell toward the cube's geometric center.
+        double half = (size - 1) * 0.5;
+        double tx = half - lx;
+        double ty = half - ly;
+        double tz = half - lz;
+
+        // Zero out the axial component. Only lateral nudging -- we don't
+        // want particles to spawn forward (past the nozzle face) or
+        // rearward (inside the next cell behind) relative to their usual
+        // spawn point. oppositeDirection is the exhaust axis, which shares
+        // axis with FACING.
+        switch (oppositeDirection.getAxis()) {
+            case X: tx = 0; break;
+            case Y: ty = 0; break;
+            case Z: tz = 0; break;
+        }
+
+        // Normalize to a fixed inward magnitude. The 3x3x3's center cell
+        // lands here with len == 0 -- return zero so its plume is left
+        // exactly where it was, matching the requirement that only the
+        // 8 surrounding emitters shift.
+        double len = Math.sqrt(tx * tx + ty * ty + tz * tz);
+        if (len < 1e-6) return super.getExtraParticleOriginOffset(oppositeDirection);
+
+        double scale = MULTIBLOCK_PARTICLE_INWARD_OFFSET / len;
+        return new Vector3d(tx * scale, ty * scale, tz * scale);
     }
 
     // =====================================================================
