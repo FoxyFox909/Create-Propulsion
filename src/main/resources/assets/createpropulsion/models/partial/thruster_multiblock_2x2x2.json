@@ -3,8 +3,7 @@
 	"credit": "Placeholder geometry — replace with final multiblock model",
 	"texture_size": [128, 128],
 	"textures": {
-		"3": "createpropulsion:block/thruster_2x2x2",
-		"particle": "createpropulsion:block/thruster_multiblock_2x2x2"
+		"3": "createpropulsion:block/thruster_2x2x2"
 	},
 	"elements": [
 		{

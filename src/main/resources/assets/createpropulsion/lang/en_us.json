@@ -80,7 +80,7 @@
   "createpropulsion.gui.goggles.thruster.obstructed": "Obstructed",
   "createpropulsion.gui.goggles.thruster.efficiency": "Efficiency",
   "createpropulsion.gui.goggles.thruster.size": "Size",
-  "createpropulsion.gui.goggles.thruster.bulk_bonus": "Bulk bonus",
+  "createpropulsion.gui.goggles.thruster.bulk_bonus": "Consumption bonus",
 
   "createpropulsion.gui.goggles.cc.peripheral_controlled": "Controlled via Peripheral",
   "createpropulsion.gui.goggles.optical_sensor.lenses": "Lenses",
