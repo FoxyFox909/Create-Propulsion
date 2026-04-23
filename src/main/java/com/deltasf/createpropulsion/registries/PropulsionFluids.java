@@ -61,7 +61,7 @@ public class PropulsionFluids {
             .setData(ProviderType.LANG, FUCK_OFF_LANG())
             .block().setData(ProviderType.LANG, FUCK_OFF_LANG()).build()
             .bucket().setData(ProviderType.LANG, FUCK_OFF_LANG()).build()
-            .properties(p -> p.viscosity(500).density(-200))
+            .properties(p -> p.viscosity(500).density(700))
             .fluidProperties(p -> p.levelDecreasePerBlock(1)
                     .tickRate(5)
                     .slopeFindDistance(3)
