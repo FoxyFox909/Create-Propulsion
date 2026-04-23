@@ -128,6 +128,8 @@
   "item.createpropulsion.pine_resin": "Pine Resin",
   "fluid.createpropulsion.turpentine": "Turpentine",
   "item.createpropulsion.turpentine_bucket": "Turpentine Bucket",
+  "fluid.createpropulsion.oxidizer": "Oxidizer",
+  "item.createpropulsion.oxidizer_bucket": "Oxidizer Bucket",
 
   "item.createpropulsion.optical_lens": "Optical Lens",
   "item.createpropulsion.fluid_lens": "Fluid Lens",
@@ -272,5 +274,25 @@
   "createpropulsion.ponder.shared.burner.redstone_thermostat": "Applying a Redstone signal will disable the thermostat",
   "createpropulsion.ponder.shared.burner.constant_consumption": "While disabled, fuel is consumed at a constant rate, even without a consumer on top",
   "createpropulsion.ponder.shared.burner.status.hot": "§fBurner Status: §6Hot",
-  "createpropulsion.ponder.shared.burner.status.searing": "§fBurner Status: §cSearing"
+  "createpropulsion.ponder.shared.burner.status.searing": "§fBurner Status: §cSearing",
+
+  "createpropulsion.ponder.thruster_single.header": "Introduction to Thrusters",
+  "createpropulsion.ponder.shared.single_thruster.intro": "§fThrusters transform fuel into motion, if part of a physics-assembled vehicle.",
+  "createpropulsion.ponder.shared.single_thruster.redstone_power_level": "§fThruster power is proportional to redstone signal.",
+  "createpropulsion.ponder.shared.single_thruster.about_obstruction": "§fIf a thruster's exhaust is blocked, its efficiency will drop. The closer the blockage, the bigger the loss.",
+
+  "createpropulsion.ponder.thruster_multiblock.header": "Multiblock Thruster Basics",
+  "createpropulsion.ponder.shared.multiblock_thruster.intro": "§fSingle thrusters placed in a §32x2x2 §for §33x3x3 §fcube will form a multiblock thruster.",
+  "createpropulsion.ponder.shared.multiblock_thruster.facing": "All placed thrusters must face the same direction.",
+  "createpropulsion.ponder.shared.multiblock_thruster.about_oxidizer": "Multiblock thrusters require oxidizer along with fuel.",
+  "createpropulsion.ponder.shared.multiblock_thruster.pipe_inputs_1": "Pipes connect to the copper blocks of multiblock thrusters.",
+  "createpropulsion.ponder.shared.multiblock_thruster.pipe_inputs_2": "§6Fuel §fis accepted from the §6front §fand sides, §9oxidizer §ffrom the §9top and bottom§f.",
+  "createpropulsion.ponder.shared.multiblock_thruster.pipe_inputs_3": "§fFor vertical thrusters, §6fuel §fis §6front§f, §6east§f, and §6west §ffaces. §9Oxidizer §fis §9south §fand §9north §ffaces.",
+
+  "createpropulsion.ponder.multiblock_efficiency.header": "Multiblock Thruster Efficiency",
+  "createpropulsion.ponder.shared.multiblock_efficiency.power_1": "§fA §32x2x2 §fthruster has the power of 8 singular thrusters",
+  "createpropulsion.ponder.shared.multiblock_efficiency.power_2": "§f...and a §33x3x3 §fthruster has the power of 27.",
+  "createpropulsion.ponder.shared.multiblock_efficiency.efficiency_1": "§fA §32x2x2 §fthruster is slightly more fuel-efficient than 8 singular thrusters.",
+  "createpropulsion.ponder.shared.multiblock_efficiency.efficiency_2": "§fA §33x3x3 §fthruster is is even more fuel-efficient, and also gains oxidizer efficiency."
+
 }
