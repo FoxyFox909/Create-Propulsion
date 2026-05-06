@@ -33,6 +33,11 @@ public class PropulsionConfig {
     //Creative Thruster
     public static final ForgeConfigSpec.ConfigValue<Double> CREATIVE_THRUSTER_THRUST_MULTIPLIER;
 
+    //Ion Thruster
+    public static final ForgeConfigSpec.ConfigValue<Double>  ION_THRUSTER_THRUST_MULTIPLIER;
+    public static final ForgeConfigSpec.ConfigValue<Integer> ION_THRUSTER_RF_PER_TICK;
+    public static final ForgeConfigSpec.ConfigValue<Integer> ION_THRUSTER_CAPACITY;
+
     //Optical sensors
     public static final ForgeConfigSpec.ConfigValue<Integer> OPTICAL_SENSOR_TICKS_PER_UPDATE;
     public static final ForgeConfigSpec.ConfigValue<Integer> INLINE_OPTICAL_SENSOR_MAX_DISTANCE;
@@ -140,6 +145,15 @@ public class PropulsionConfig {
         SERVER_BUILDER.push("Creative Thruster");
         CREATIVE_THRUSTER_THRUST_MULTIPLIER = SERVER_BUILDER.comment("Thrust is multiplied by that.")
                 .define("Creative thrust multiplier", 1.0);
+        SERVER_BUILDER.pop();
+
+        SERVER_BUILDER.push("Ion Thruster");
+        ION_THRUSTER_THRUST_MULTIPLIER = SERVER_BUILDER.comment("Thrust is multiplied by that.")
+                .define("Ion thrust multiplier", 1.0);
+        ION_THRUSTER_RF_PER_TICK = SERVER_BUILDER.comment("Forge Energy (FE/RF) consumed per tick at full redstone power. Partial-power running draws proportionally less.")
+                .defineInRange("Ion thruster RF per tick", 2048, 1, 1_000_000);
+        ION_THRUSTER_CAPACITY = SERVER_BUILDER.comment("Capacity of the internal energy buffer, in FE/RF. A full buffer can sustain full-power running for (capacity / RF per tick) ticks.")
+                .defineInRange("Ion thruster capacity", 200_000, 1, Integer.MAX_VALUE);
         SERVER_BUILDER.pop();
 
         SERVER_BUILDER.push("Optical sensors");

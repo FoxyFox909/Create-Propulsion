@@ -28,6 +28,8 @@ import com.deltasf.createpropulsion.redstone_transmission.RedstoneTransmissionVi
 import com.deltasf.createpropulsion.thruster.creative_thruster.CreativeThrusterBlockEntity;
 import com.deltasf.createpropulsion.thruster.creative_thruster.CreativeThrusterRenderer;
 import com.deltasf.createpropulsion.thruster.creative_thruster.CreativeThrusterVisual;
+import com.deltasf.createpropulsion.thruster.ion.IonThrusterBlockEntity;
+import com.deltasf.createpropulsion.thruster.ion.IonThrusterRenderer;
 import com.deltasf.createpropulsion.redstone_transmission.RedstoneTransmissionBlockEntity;
 import com.deltasf.createpropulsion.thruster.thruster.ThrusterBlockEntity;
 import com.deltasf.createpropulsion.thruster.thruster.ThrusterRenderer;
@@ -48,6 +50,12 @@ public class PropulsionBlockEntities {
             REGISTRATE.blockEntity("thruster_block_entity", ThrusterBlockEntity::new)
                     .validBlocks(PropulsionBlocks.THRUSTER_BLOCK)
                     .renderer(() -> ThrusterRenderer::new)
+                    .register();
+
+    public static final BlockEntityEntry<IonThrusterBlockEntity> ION_THRUSTER_BLOCK_ENTITY =
+            REGISTRATE.blockEntity("ion_thruster_block_entity", IonThrusterBlockEntity::new)
+                    .validBlocks(PropulsionBlocks.ION_THRUSTER_BLOCK)
+                    .renderer(() -> IonThrusterRenderer::new)
                     .register();
 
     public static final BlockEntityEntry<CreativeThrusterBlockEntity> CREATIVE_THRUSTER_BLOCK_ENTITY =

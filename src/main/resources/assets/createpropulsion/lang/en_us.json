@@ -3,6 +3,8 @@
 
   "block.createpropulsion.thruster": "Thruster",
   "item.createpropulsion.thruster": "Thruster",
+  "block.createpropulsion.ion_thruster": "Ion Thruster",
+  "item.createpropulsion.ion_thruster": "Ion Thruster",
 
   "block.createpropulsion.inline_optical_sensor": "Inline Optical Sensor",
   "item.createpropulsion.inline_optical_sensor": "Inline Optical Sensor",
@@ -81,6 +83,9 @@
   "createpropulsion.gui.goggles.thruster.efficiency": "Efficiency",
   "createpropulsion.gui.goggles.thruster.size": "Size",
   "createpropulsion.gui.goggles.thruster.bulk_bonus": "Consumption bonus",
+  "createpropulsion.gui.goggles.ion_thruster.status.no_energy": "No Energy",
+  "createpropulsion.gui.goggles.ion_thruster.energy": "Energy",
+  "createpropulsion.gui.goggles.ion_thruster.unit_fe": "FE",
 
   "createpropulsion.gui.goggles.cc.peripheral_controlled": "Controlled via Peripheral",
   "createpropulsion.gui.goggles.optical_sensor.lenses": "Lenses",
@@ -98,6 +103,8 @@
 
   "createpropulsion.thruster.tooltip.condition1": "When fueled and powered",
   "createpropulsion.thruster.tooltip.behaviour1": "Pushes vehicles. Thrust depends on _redstone signal_ strength and fuel type.",
+  "createpropulsion.ion_thruster.tooltip.condition1": "When powered and supplied with Forge Energy",
+  "createpropulsion.ion_thruster.tooltip.behaviour1": "Pushes vehicles. Thrust depends on _redstone signal_ strength. Consumes _Forge Energy (FE/RF)_ instead of fluid fuel.",
 
   "createpropulsion.creative_thruster.tooltip.condition1": "When powered",
   "createpropulsion.creative_thruster.tooltip.behaviour1": "Pushes vehicles. Thrust depends on _redstone signal_ strength.",
