@@ -8,8 +8,12 @@ import com.deltasf.createpropulsion.thruster.thruster.ThrusterBlockEntity;
 import com.simibubi.create.foundation.utility.CreateLang;
 import net.createmod.catnip.lang.LangBuilder;
 import net.minecraft.ChatFormatting;
+import com.deltasf.createpropulsion.particles.ParticleTypes;
+import com.deltasf.createpropulsion.particles.plasma.PlasmaParticleData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.particles.ParticleOptions;
+import net.minecraft.core.particles.ParticleType;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -267,6 +271,19 @@ public class IonThrusterBlockEntity extends AbstractThrusterBlockEntity {
         // Matches ThrusterBlockEntity so shared models emit plumes from the
         // correct position.
         return 0.95;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    protected ParticleOptions createParticleOptions() {
+        // Ion thrusters always emit plasma. The PlasmaParticle stack
+        // (data class, particle, factory, JSON manifest, 9 sprite frames)
+        // is already registered via ParticleTypes.PLASMA — this override
+        // is the only wiring needed to swap the inherited PlumeParticleData
+        // default. Mirrors CreativeThrusterBlockEntity#createParticleOptions
+        // minus the plumeType branch, since ion thrusters don't expose a
+        // selector.
+        return new PlasmaParticleData((ParticleType<PlasmaParticleData>) ParticleTypes.getPlasmaType());
     }
 
     // =====================================================================
