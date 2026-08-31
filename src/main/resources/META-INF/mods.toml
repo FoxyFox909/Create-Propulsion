@@ -7,14 +7,14 @@ version="${mod_version}"
 displayName="Create: Propulsion"
 displayURL="https://modrinth.com/mod/create-propulsion"
 logoFile="icon.png"
-authors="Sergey Feduk"
+authors="${mod_authors}"
 modClass="com.deltasf.createpropulsion.CreatePropulsion"
 
 [[mixins]]
 	type = "forge"
     config = "createpropulsion.mixins.json"
 
-description='''A mod that adds optical sensors and thruster to the Create mod. All stuff works with Valkyrien Skies 2!'''
+description='''${mod_description}'''
 [[dependencies.${mod_id}]]
     modId="forge"
     mandatory=true
