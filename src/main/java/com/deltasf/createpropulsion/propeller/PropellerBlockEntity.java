@@ -11,6 +11,7 @@ import net.createmod.catnip.animation.AnimationTickHolder;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import net.minecraftforge.fml.DistExecutor;
 import org.jetbrains.annotations.NotNull;
 import org.valkyrienskies.mod.common.util.VectorConversionsMCKt;
 
@@ -59,7 +60,10 @@ public class PropellerBlockEntity extends KineticBlockEntity {
     public List<Float> prevBladeAngles;
     public List<Float> renderedBladeAngles;
     public float animationStartTime;
+
+    @OnlyIn(Dist.CLIENT)
     protected PropellerSoundInstance soundInstance_low;
+    @OnlyIn(Dist.CLIENT)
     protected PropellerSoundInstance soundInstance_high;
 
     public float visualRPM = 0f;
@@ -86,10 +90,7 @@ public class PropellerBlockEntity extends KineticBlockEntity {
         if (level.isClientSide) {
             if (prevBladeAngles == null) prevBladeAngles = new ArrayList<>();
             if (renderedBladeAngles == null) renderedBladeAngles = new ArrayList<>();
-            soundInstance_low = new PropellerSoundInstance(this, 0);
-            soundInstance_high = new PropellerSoundInstance(this, 1);
-            Minecraft.getInstance().getSoundManager().queueTickingSound(soundInstance_low);
-            Minecraft.getInstance().getSoundManager().queueTickingSound(soundInstance_high);
+            DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> this::initSound);
         } else {
             BlockState state = getBlockState();
 
@@ -102,6 +103,20 @@ public class PropellerBlockEntity extends KineticBlockEntity {
             }
             updateThrust();
         }
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    public void initSound() {
+        soundInstance_low = new PropellerSoundInstance(this, 0);
+        soundInstance_high = new PropellerSoundInstance(this, 1);
+        Minecraft.getInstance().getSoundManager().queueTickingSound(soundInstance_low);
+        Minecraft.getInstance().getSoundManager().queueTickingSound(soundInstance_high);
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    public void removeSound() {
+        if (soundInstance_low != null) Minecraft.getInstance().getSoundManager().stop(soundInstance_low);
+        if (soundInstance_high != null) Minecraft.getInstance().getSoundManager().stop(soundInstance_high);
     }
 
     public boolean IsClockwise() {
@@ -482,7 +497,6 @@ public class PropellerBlockEntity extends KineticBlockEntity {
     public void invalidate() {
         super.invalidate();
         itemHandler.invalidate();
-        if (soundInstance_low != null) Minecraft.getInstance().getSoundManager().stop(soundInstance_low);
-        if (soundInstance_high != null) Minecraft.getInstance().getSoundManager().stop(soundInstance_high);
+        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> this::removeSound);
     }
 }
