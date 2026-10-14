@@ -42,7 +42,6 @@ public class PropulsionConfig {
     public static final ForgeConfigSpec.ConfigValue<Double>  HOVERPAD_LIFT_MULTIPLIER;
     public static final ForgeConfigSpec.ConfigValue<Double>  HOVERPAD_MAX_HEIGHT;
     public static final ForgeConfigSpec.ConfigValue<Double>  HOVERPAD_DAMPING;
-    public static final ForgeConfigSpec.ConfigValue<Boolean> HOVERPAD_PUSH_STRAIGHT_UP;
     public static final ForgeConfigSpec.ConfigValue<Integer> HOVERPAD_RF_PER_TICK;
     public static final ForgeConfigSpec.ConfigValue<Integer> HOVERPAD_CAPACITY;
 
@@ -175,8 +174,6 @@ public class PropulsionConfig {
                 .defineInRange("Hoverpad max hover height", 6.0, 1.0, 32.0);
         HOVERPAD_DAMPING = SERVER_BUILDER.comment("How strongly pads resist bouncing. Lower = springier, 1 = settles without overshoot, above 1 = sluggish.")
                 .defineInRange("Hoverpad damping", 0.7, 0.5, 3.0);
-        HOVERPAD_PUSH_STRAIGHT_UP = SERVER_BUILDER.comment("If true, pads push straight up in world space instead of along their own axis, so tilted ships don't drift sideways.")
-                .define("Hoverpad pushes straight up", false);
         HOVERPAD_RF_PER_TICK = SERVER_BUILDER.comment("Forge Energy (FE/RF) consumed per tick at full lift. Consumption scales with the lift actually produced, so a pad carrying a lighter load draws less.")
                 .defineInRange("Hoverpad RF per tick", 1024, 1, 1_000_000);
         HOVERPAD_CAPACITY = SERVER_BUILDER.comment("Capacity of the internal energy buffer, in FE/RF.")

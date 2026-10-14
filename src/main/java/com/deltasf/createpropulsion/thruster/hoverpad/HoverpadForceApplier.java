@@ -36,6 +36,9 @@ import javax.annotation.Nullable;
  * down (up to {@link #MAX_BRAKE_G}) while it rises through the hover zone.
  * Heavy ships are unaffected by these limits.
  *
+ * <p>The push is always vertical (see {@link #apply}), so tilting changes how
+ * hard a pad pushes but never pushes the ship sideways.
+ *
  * <p>When the ground is another (non-static) ship, an equal and opposite
  * force is applied to it. Besides being correct, this closes the obvious
  * exploit of "hovering" on a platform that is attached to your own ship.
@@ -208,14 +211,16 @@ public class HoverpadForceApplier {
         double weight = massShare * GRAVITY;
         double lift = stiffness * compression + damping * closingSpeed;
         lift = Math.max(-weight * MAX_BRAKE_G, Math.min(lift, Math.min(maxLift, weight * MAX_LIFT_G)));
-        data.recordLift(Math.abs(lift) / fullLift, distance);
-        if (lift == 0) return;
 
-        if (PropulsionConfig.HOVERPAD_PUSH_STRAIGHT_UP.get()) {
-            force.set(0, lift, 0);
-        } else {
-            force.set(rayWorld).mul(-lift);
-        }
+        // Push straight up/down only: the vertical part of "away from the
+        // ground along the pad's axis". Dropping the sideways part means a
+        // tilted ship never drifts, while pads on the low side still push
+        // harder and level it out. A pad on its side gets no lift from a
+        // wall, and an upside-down one pushes down, never up off a ceiling.
+        double verticalLift = -rayWorld.y * lift;
+        data.recordLift(Math.abs(verticalLift) / fullLift, distance);
+        if (verticalLift == 0) return;
+        force.set(0, verticalLift, 0);
 
         relativePos.set(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5).sub(transform.getPositionInShip());
         ship.applyInvariantForceToPos(force, relativePos);
