@@ -48,6 +48,8 @@ public class PropulsionPartialModels {
     public static final PartialModel HOT_AIR_PUMP_COG = partial("hot_air_pump_cogwheel");
     public static final PartialModel HOT_AIR_PUMP_MEMBRANE = partial("hot_air_pump_membrane");
     public static final PartialModel HOT_AIR_PUMP_MESH = partial("hot_air_pump_mesh");
+    //Telegraph
+    public static final PartialModel TELEGRAPH_LEVER = partial("telegraph_lever");
 
     private static PartialModel partial(String path) {
         return PartialModel.of(ResourceLocation.fromNamespaceAndPath(CreatePropulsion.ID, "partial/" + path));
