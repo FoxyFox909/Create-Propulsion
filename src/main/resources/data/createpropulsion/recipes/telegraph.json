@@ -1,0 +1,24 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "key": {
+    "L": {
+      "item": "minecraft:lever"
+    },
+    "G": {
+      "item": "create:golden_sheet"
+    },
+    "C": {
+      "item": "create:brass_casing"
+    }
+  },
+  "pattern": [
+    "L",
+    "G",
+    "C"
+  ],
+  "result": {
+    "item": "createpropulsion:telegraph"
+  },
+  "show_notification": true
+}

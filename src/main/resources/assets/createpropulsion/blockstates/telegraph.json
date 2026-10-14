@@ -1,0 +1,19 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "createpropulsion:block/telegraph"
+    },
+    "facing=east": {
+      "model": "createpropulsion:block/telegraph",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "createpropulsion:block/telegraph",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "createpropulsion:block/telegraph",
+      "y": 270
+    }
+  }
+}

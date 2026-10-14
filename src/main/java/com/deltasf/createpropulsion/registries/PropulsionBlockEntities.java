@@ -14,6 +14,8 @@ import com.deltasf.createpropulsion.heat.engine.StirlingEngineRenderer;
 import com.deltasf.createpropulsion.heat.engine.StirlingEngineVisual;
 import com.deltasf.createpropulsion.helm.RedstoneHelmBlockEntity;
 import com.deltasf.createpropulsion.helm.RedstoneHelmRenderer;
+import com.deltasf.createpropulsion.telegraph.TelegraphBlockEntity;
+import com.deltasf.createpropulsion.telegraph.TelegraphRenderer;
 import com.deltasf.createpropulsion.lodestone_tracker.LodestoneTrackerBlockEntity;
 import com.deltasf.createpropulsion.lodestone_tracker.LodestoneTrackerRenderer;
 import com.deltasf.createpropulsion.magnet.RedstoneMagnetBlockEntity;
@@ -176,5 +178,11 @@ public class PropulsionBlockEntities {
             REGISTRATE.blockEntity("redstone_helm_block_entity", RedstoneHelmBlockEntity::new)
                     .validBlock(PropulsionBlocks.REDSTONE_HELM_BLOCK)
                     .renderer(() -> RedstoneHelmRenderer::new)
+                    .register();
+
+    public static final BlockEntityEntry<TelegraphBlockEntity> TELEGRAPH_BLOCK_ENTITY =
+            REGISTRATE.blockEntity("telegraph_block_entity", TelegraphBlockEntity::new)
+                    .validBlock(PropulsionBlocks.TELEGRAPH_BLOCK)
+                    .renderer(() -> TelegraphRenderer::new)
                     .register();
 }
