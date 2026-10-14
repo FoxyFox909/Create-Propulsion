@@ -104,5 +104,10 @@
         "block": "createpropulsion:hot_air_pump",
         "mass": 800.0,
         "friction": 0.4
+    },
+    {
+        "block": "createpropulsion:hoverpad",
+        "mass": 1000.0,
+        "friction": 0.4
     }
 ]

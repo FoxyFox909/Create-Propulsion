@@ -30,6 +30,7 @@ import com.deltasf.createpropulsion.redstone_transmission.RedstoneTransmissionVi
 import com.deltasf.createpropulsion.thruster.creative_thruster.CreativeThrusterBlockEntity;
 import com.deltasf.createpropulsion.thruster.creative_thruster.CreativeThrusterRenderer;
 import com.deltasf.createpropulsion.thruster.creative_thruster.CreativeThrusterVisual;
+import com.deltasf.createpropulsion.thruster.hoverpad.HoverpadBlockEntity;
 import com.deltasf.createpropulsion.thruster.ion.IonThrusterBlockEntity;
 import com.deltasf.createpropulsion.thruster.ion.IonThrusterRenderer;
 import com.deltasf.createpropulsion.redstone_transmission.RedstoneTransmissionBlockEntity;
@@ -58,6 +59,11 @@ public class PropulsionBlockEntities {
             REGISTRATE.blockEntity("ion_thruster_block_entity", IonThrusterBlockEntity::new)
                     .validBlocks(PropulsionBlocks.ION_THRUSTER_BLOCK)
                     .renderer(() -> IonThrusterRenderer::new)
+                    .register();
+
+    public static final BlockEntityEntry<HoverpadBlockEntity> HOVERPAD_BLOCK_ENTITY =
+            REGISTRATE.blockEntity("hoverpad_block_entity", HoverpadBlockEntity::new)
+                    .validBlocks(PropulsionBlocks.HOVERPAD_BLOCK)
                     .register();
 
     public static final BlockEntityEntry<CreativeThrusterBlockEntity> CREATIVE_THRUSTER_BLOCK_ENTITY =

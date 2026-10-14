@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "facing=north": { "model": "createpropulsion:block/hoverpad" },
+    "facing=south": { "model": "createpropulsion:block/hoverpad", "y": 180 },
+    "facing=west":  { "model": "createpropulsion:block/hoverpad", "y": 270 },
+    "facing=east":  { "model": "createpropulsion:block/hoverpad", "y": 90 },
+    "facing=up":    { "model": "createpropulsion:block/hoverpad", "x": 270 },
+    "facing=down":  { "model": "createpropulsion:block/hoverpad", "x": 90 }
+  }
+}

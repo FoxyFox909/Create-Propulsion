@@ -87,14 +87,7 @@ public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity imple
             BlockState state = getBlockState();
             calculateObstruction(level, worldPosition, state.getValue(AbstractThrusterBlock.FACING));
 
-            ThrusterForceAttachment ship = ThrusterForceAttachment.get(level, worldPosition);
-            if (ship != null) {
-                ThrusterData data = this.getThrusterData();
-                data.setDirection(VectorConversionsMCKt.toJOMLD(state.getValue(AbstractThrusterBlock.FACING).getNormal()));
-                data.setThrust(0);
-                ThrusterForceApplier applier = new ThrusterForceApplier(data);
-                ship.addApplier(worldPosition, applier);
-            }
+            attachToShip(state);
 
             Block block = getBlockState().getBlock();
             if (block instanceof AbstractThrusterBlock) {
@@ -104,6 +97,21 @@ public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity imple
         // Client-side sound instances are created lazily from tick() via
         // ensureSoundInstance() rather than here, so they can stop themselves
         // (releasing their sound channel) while idle and be revived later.
+    }
+
+    /** Registers this thruster's force applier with the ship it sits on, if
+     *  any. Server-side only, called from {@link #initialize()}. Thrusters that
+     *  drive their own physics attachment (e.g. the Hoverpad) override this. */
+    @SuppressWarnings("null")
+    protected void attachToShip(BlockState state) {
+        ThrusterForceAttachment ship = ThrusterForceAttachment.get(level, worldPosition);
+        if (ship != null) {
+            ThrusterData data = this.getThrusterData();
+            data.setDirection(VectorConversionsMCKt.toJOMLD(state.getValue(AbstractThrusterBlock.FACING).getNormal()));
+            data.setThrust(0);
+            ThrusterForceApplier applier = new ThrusterForceApplier(data);
+            ship.addApplier(worldPosition, applier);
+        }
     }
 
     //Control logic

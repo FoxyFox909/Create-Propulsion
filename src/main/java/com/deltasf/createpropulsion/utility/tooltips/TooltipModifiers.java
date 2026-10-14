@@ -39,6 +39,12 @@ public class TooltipModifiers {
             int thrusterStrength = Math.round(1000 * thrustMultiplier);
             return Component.translatable(getSummaryKey(payload.item(), payload.path() + ".tooltip.summary")).getString().replace("{}", String.valueOf(thrusterStrength));
         });
+        //Hoverpad
+        tooltipModificationLookup.put(PropulsionBlocks.HOVERPAD_BLOCK.asItem(), (payload) -> {
+            double maxHeight = PropulsionConfig.HOVERPAD_MAX_HEIGHT.get();
+            String height = maxHeight == Math.rint(maxHeight) ? String.valueOf((int) maxHeight) : String.format("%.1f", maxHeight);
+            return Component.translatable(payload.path + ".tooltip.summary").getString().replace("{}", height);
+        });
         //Inline optical sensor
         tooltipModificationLookup.put(PropulsionBlocks.INLINE_OPTICAL_SENSOR_BLOCK.asItem(), (payload) -> {
             int raycastDistance = PropulsionConfig.INLINE_OPTICAL_SENSOR_MAX_DISTANCE.get();

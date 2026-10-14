@@ -17,6 +17,7 @@ import com.deltasf.createpropulsion.physics_assembler.PhysicsAssemblerBlock;
 import com.deltasf.createpropulsion.propeller.PropellerBlock;
 import com.deltasf.createpropulsion.redstone_transmission.RedstoneTransmissionBlock;
 import com.deltasf.createpropulsion.thruster.creative_thruster.CreativeThrusterBlock;
+import com.deltasf.createpropulsion.thruster.hoverpad.HoverpadBlock;
 import com.deltasf.createpropulsion.thruster.ion.IonThrusterBlock;
 import com.deltasf.createpropulsion.thruster.thruster.ThrusterBlock;
 import com.deltasf.createpropulsion.tilt_adapter.TiltAdapterBlock;
@@ -99,6 +100,18 @@ public class PropulsionBlocks {
             .register();
 
     public static final BlockEntry<IonThrusterBlock> ION_THRUSTER_BLOCK = REGISTRATE.block("ion_thruster", IonThrusterBlock::new)
+            .properties(p -> p.mapColor(MapColor.METAL))
+            .properties(p -> p.requiresCorrectToolForDrops())
+            .properties(p -> p.sound(SoundType.METAL))
+            .properties(p -> p.strength(5.5f, 4.0f))
+            .properties(p -> p.noOcclusion())
+            .tag(BlockTags.MINEABLE_WITH_PICKAXE)
+            .blockstate(FUCK_OFF())
+            .item().model(FUCK_OFF_ITEM()).build()
+            .setData(ProviderType.LANG, FUCK_OFF_LANG())
+            .register();
+
+    public static final BlockEntry<HoverpadBlock> HOVERPAD_BLOCK = REGISTRATE.block("hoverpad", HoverpadBlock::new)
             .properties(p -> p.mapColor(MapColor.METAL))
             .properties(p -> p.requiresCorrectToolForDrops())
             .properties(p -> p.sound(SoundType.METAL))

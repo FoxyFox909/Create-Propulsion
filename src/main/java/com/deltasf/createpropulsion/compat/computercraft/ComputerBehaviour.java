@@ -8,6 +8,7 @@ import com.deltasf.createpropulsion.optical_sensors.OpticalSensorBlockEntity;
 import com.deltasf.createpropulsion.physics_assembler.PhysicsAssemblerBlockEntity;
 import com.deltasf.createpropulsion.redstone_transmission.RedstoneTransmissionBlockEntity;
 import com.deltasf.createpropulsion.thruster.creative_thruster.CreativeThrusterBlockEntity;
+import com.deltasf.createpropulsion.thruster.hoverpad.HoverpadBlockEntity;
 import com.deltasf.createpropulsion.thruster.ion.IonThrusterBlockEntity;
 import com.deltasf.createpropulsion.thruster.thruster.ThrusterBlockEntity;
 import com.deltasf.createpropulsion.tilt_adapter.TiltAdapterBlockEntity;
@@ -43,6 +44,7 @@ public class ComputerBehaviour extends AbstractComputerBehaviour {
         register(ThrusterBlockEntity.class, ThrusterPeripheral::new);
         register(CreativeThrusterBlockEntity.class, CreativeThrusterPeripheral::new);
         register(IonThrusterBlockEntity.class, IonThrusterPeripheral::new);
+        register(HoverpadBlockEntity.class, HoverpadPeripheral::new);
         register(OpticalSensorBlockEntity.class, OpticalSensorPeripheral::new);
         register(LodestoneTrackerBlockEntity.class, LodestoneTrackerPeripheral::new);
         register(RedstoneMagnetBlockEntity.class, RedstoneMagnetPeripheral::new);

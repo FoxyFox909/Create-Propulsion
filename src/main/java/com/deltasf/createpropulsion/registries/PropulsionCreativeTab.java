@@ -43,6 +43,7 @@ public class PropulsionCreativeTab {
             output.accept(PropulsionBlocks.OPTICAL_SENSOR_BLOCK);
             output.accept(PropulsionBlocks.THRUSTER_BLOCK);
             output.accept(PropulsionBlocks.ION_THRUSTER_BLOCK);
+            output.accept(PropulsionBlocks.HOVERPAD_BLOCK);
             output.accept(PropulsionBlocks.CREATIVE_THRUSTER_BLOCK);
             //From 0.2
             output.accept(PropulsionBlocks.LODESTONE_TRACKER_BLOCK);

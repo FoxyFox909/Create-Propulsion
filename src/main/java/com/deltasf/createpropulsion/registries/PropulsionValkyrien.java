@@ -11,6 +11,7 @@ import com.deltasf.createpropulsion.magnet.MagnetForceAttachment;
 import com.deltasf.createpropulsion.propeller.PropellerAttachment;
 import com.deltasf.createpropulsion.reaction_wheel.ReactionWheelAttachment;
 import com.deltasf.createpropulsion.thruster.ThrusterForceAttachment;
+import com.deltasf.createpropulsion.thruster.hoverpad.HoverpadAttachment;
 
 public class PropulsionValkyrien {
     public static void init() {
@@ -37,6 +38,11 @@ public class PropulsionValkyrien {
         );
         api.registerAttachment(api.newAttachmentRegistrationBuilder(ImpactSensorAttachment.class)
             .useLegacySerializer()
+            .build()
+        );
+        //Hoverpad appliers are rebuilt by their block entities on load, nothing to save
+        api.registerAttachment(api.newAttachmentRegistrationBuilder(HoverpadAttachment.class)
+            .useTransientSerializer()
             .build()
         );
 

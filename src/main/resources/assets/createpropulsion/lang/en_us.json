@@ -5,6 +5,7 @@
   "item.createpropulsion.thruster": "Thruster",
   "block.createpropulsion.ion_thruster": "Ion Thruster",
   "item.createpropulsion.ion_thruster": "Ion Thruster",
+  "block.createpropulsion.hoverpad": "Hoverpad",
 
   "block.createpropulsion.inline_optical_sensor": "Inline Optical Sensor",
   "item.createpropulsion.inline_optical_sensor": "Inline Optical Sensor",
@@ -86,6 +87,13 @@
   "createpropulsion.gui.goggles.ion_thruster.status.no_energy": "No Energy",
   "createpropulsion.gui.goggles.ion_thruster.energy": "Energy",
   "createpropulsion.gui.goggles.ion_thruster.unit_fe": "FE",
+  "createpropulsion.gui.goggles.hoverpad.status.hovering": "Hovering",
+  "createpropulsion.gui.goggles.hoverpad.status.no_ground": "No Ground in Range",
+  "createpropulsion.gui.goggles.hoverpad.status.needs_ship": "Not on a Ship",
+  "createpropulsion.gui.goggles.hoverpad.target_height": "Target Height",
+  "createpropulsion.gui.goggles.hoverpad.ground_distance": "Ground Distance",
+  "createpropulsion.gui.goggles.hoverpad.lift": "Lift",
+  "createpropulsion.gui.goggles.hoverpad.unit_blocks": "blocks",
 
   "createpropulsion.gui.goggles.cc.peripheral_controlled": "Controlled via Peripheral",
   "createpropulsion.gui.goggles.optical_sensor.lenses": "Lenses",
@@ -105,6 +113,9 @@
   "createpropulsion.thruster.tooltip.behaviour1": "Pushes vehicles. Thrust depends on _redstone signal_ strength and fuel type.",
   "createpropulsion.ion_thruster.tooltip.condition1": "When powered and supplied with Forge Energy",
   "createpropulsion.ion_thruster.tooltip.behaviour1": "Pushes vehicles. Thrust depends on _redstone signal_ strength. Consumes _Forge Energy (FE/RF)_ instead of fluid fuel.",
+  "createpropulsion.hoverpad.tooltip.summary": "Lets vehicles _hover_ up to _{} blocks_ above the ground, fluids or other vehicles. Lift fades out with height, so it _can't fly_.",
+  "createpropulsion.hoverpad.tooltip.condition1": "When powered and supplied with Forge Energy",
+  "createpropulsion.hoverpad.tooltip.behaviour1": "_Redstone signal_ strength sets the hover height. Heavier vehicles settle lower. Consumes _Forge Energy (FE/RF)_ in proportion to the lift it provides.",
 
   "createpropulsion.creative_thruster.tooltip.condition1": "When powered",
   "createpropulsion.creative_thruster.tooltip.behaviour1": "Pushes vehicles. Thrust depends on _redstone signal_ strength.",
