@@ -7,6 +7,7 @@ import java.util.function.Function;
 import com.deltasf.createpropulsion.CreatePropulsion;
 import com.deltasf.createpropulsion.PropulsionConfig;
 import com.deltasf.createpropulsion.registries.PropulsionBlocks;
+import com.deltasf.createpropulsion.thruster.ion.IonThrusterBlockEntity;
 import com.deltasf.createpropulsion.thruster.thruster.ThrusterBlockEntity;
 import com.simibubi.create.foundation.item.TooltipHelper;
 
@@ -23,6 +24,7 @@ public class TooltipModifiers {
 
     static {
         summaryKeyLookup.put(PropulsionBlocks.THRUSTER_BLOCK.asItem(), "createpropulsion.tooltip.shared.thruster_summary");
+        summaryKeyLookup.put(PropulsionBlocks.ION_THRUSTER_BLOCK.asItem(), "createpropulsion.tooltip.shared.thruster_summary");
         summaryKeyLookup.put(PropulsionBlocks.CREATIVE_THRUSTER_BLOCK.asItem(), "createpropulsion.tooltip.shared.thruster_summary");
         conditionKeyLookup.put(PropulsionBlocks.INLINE_OPTICAL_SENSOR_BLOCK.asItem(), "createpropulsion.tooltip.shared.condition.block_detected");
         conditionKeyLookup.put(PropulsionBlocks.OPTICAL_SENSOR_BLOCK.asItem(), "createpropulsion.tooltip.shared.condition.block_detected");
@@ -31,6 +33,12 @@ public class TooltipModifiers {
         tooltipModificationLookup.put(PropulsionBlocks.THRUSTER_BLOCK.asItem(), (payload) -> {
             float thrustMultiplier = PropulsionConfig.THRUSTER_THRUST_MULTIPLIER.get().floatValue();
             int thrusterStrength = Math.round(ThrusterBlockEntity.BASE_MAX_THRUST / 1000.0f * thrustMultiplier);
+            return Component.translatable(getSummaryKey(payload.item(), payload.path() + ".tooltip.summary")).getString().replace("{}", String.valueOf(thrusterStrength));
+        });
+        //Ion thruster
+        tooltipModificationLookup.put(PropulsionBlocks.ION_THRUSTER_BLOCK.asItem(), (payload) -> {
+            float thrustMultiplier = PropulsionConfig.ION_THRUSTER_THRUST_MULTIPLIER.get().floatValue();
+            int thrusterStrength = Math.round(IonThrusterBlockEntity.BASE_MAX_THRUST / 1000.0f * thrustMultiplier);
             return Component.translatable(getSummaryKey(payload.item(), payload.path() + ".tooltip.summary")).getString().replace("{}", String.valueOf(thrusterStrength));
         });
         //Creative thruster

@@ -5,6 +5,11 @@
         "friction": 0.6
     },
     {
+        "block": "createpropulsion:ion_thruster",
+        "mass": 3000.0,
+        "friction": 0.6
+    },
+    {
         "block": "createpropulsion:inline_optical_sensor",
         "mass": 100.0,
         "friction": 0.6
