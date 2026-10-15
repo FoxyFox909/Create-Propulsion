@@ -40,6 +40,8 @@ import org.valkyrienskies.mod.common.util.VectorConversionsMCKt;
 
 import java.util.List;
 
+import javax.annotation.Nullable;
+
 @SuppressWarnings({"deprecation", "unchecked"})
 public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity implements IHaveGoggleInformation {
     //Constants
@@ -266,6 +268,16 @@ public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity imple
         return new Vector3d();
     }
 
+    /** Direction particles are ejected in, in ship space (unit vector).
+     *  Default: straight out of the nozzle. The spawn position always stays
+     *  at the nozzle; only the velocity follows this.
+     *
+     *  @param oppositeDirection the exhaust direction (FACING.getOpposite())
+     *  @param ship              the ship this thruster is on, or null */
+    protected Vector3d getParticleEjectionDirection(Direction oppositeDirection, @Nullable ClientShip ship) {
+        return VectorConversionsMCKt.toJOMLD(oppositeDirection.getNormal());
+    }
+
     protected abstract double getNozzleOffsetFromCenter();
 
     public void emitParticles(Level level, BlockPos pos, BlockState state) {
@@ -295,6 +307,7 @@ public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity imple
         double currentNozzleOffset = getNozzleOffsetFromCenter();
         Vector3d additionalVel = new Vector3d();
         ClientShip ship = VSGameUtilsKt.getShipObjectManagingPos((ClientLevel) level, pos);
+        Vector3d ejectionDirection = getParticleEjectionDirection(oppositeDirection, ship);
         if (ship != null) {
             Vector3dc shipWorldVelocityJOML = ship.getVelocity();
             Matrix4dc transform = ship.getRenderTransform().getShipToWorld();
@@ -302,7 +315,7 @@ public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity imple
 
             Vector3d shipVelocity = invTransform.transformDirection(new Vector3d(shipWorldVelocityJOML));
 
-            Vector3d particleEjectionUnitVecJOML = transform.transformDirection(VectorConversionsMCKt.toJOMLD(oppositeDirection.getNormal()));
+            Vector3d particleEjectionUnitVecJOML = transform.transformDirection(new Vector3d(ejectionDirection));
 
             double shipVelComponentAlongRotatedEjection = shipWorldVelocityJOML.dot(particleEjectionUnitVecJOML);
             if (shipVelComponentAlongRotatedEjection > 0.0) {
@@ -327,7 +340,7 @@ public abstract class AbstractThrusterBlockEntity extends SmartBlockEntity imple
         double particleY = pos.getY() + 0.5 + oppositeDirection.getStepY() * currentNozzleOffset + extraOriginOffset.y;
         double particleZ = pos.getZ() + 0.5 + oppositeDirection.getStepZ() * currentNozzleOffset + extraOriginOffset.z;
 
-        Vector3d particleVelocity = new Vector3d(oppositeDirection.getStepX(), oppositeDirection.getStepY(), oppositeDirection.getStepZ())
+        Vector3d particleVelocity = new Vector3d(ejectionDirection)
                 .mul(PARTICLE_VELOCITY * visualPower).add(additionalVel);
 
         ParticleOptions particleData = createParticleOptions();

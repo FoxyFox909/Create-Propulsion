@@ -31,6 +31,7 @@ import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.common.util.LazyOptional;
 import net.minecraftforge.energy.IEnergyStorage;
 import org.joml.Vector3d;
+import org.valkyrienskies.core.api.ships.ClientShip;
 import org.valkyrienskies.core.api.ships.LoadedShip;
 import org.valkyrienskies.mod.common.VSGameUtilsKt;
 import org.valkyrienskies.mod.common.util.VectorConversionsMCKt;
@@ -308,6 +309,18 @@ public class HoverpadBlockEntity extends AbstractThrusterBlockEntity {
     @Override
     protected boolean shouldPlaySound() {
         return isLifting();
+    }
+
+    /** Hoverpads push straight up (see {@link HoverpadForceApplier}), so
+     *  while the emitter faces downward at all, the plume goes straight down
+     *  in world space too rather than following the ship's tilt. */
+    @Override
+    protected Vector3d getParticleEjectionDirection(Direction oppositeDirection, @Nullable ClientShip ship) {
+        Vector3d axis = super.getParticleEjectionDirection(oppositeDirection, ship);
+        if (ship == null) return axis;
+        Vector3d axisWorld = ship.getRenderTransform().getShipToWorld().transformDirection(new Vector3d(axis));
+        if (axisWorld.y >= 0) return axis;
+        return ship.getRenderTransform().getWorldToShip().transformDirection(new Vector3d(0, -1, 0)).normalize();
     }
 
     @Override
