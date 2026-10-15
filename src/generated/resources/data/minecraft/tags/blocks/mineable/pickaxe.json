@@ -1,6 +1,7 @@
 {
   "values": [
     "createpropulsion:thruster",
+    "createpropulsion:ion_thruster",
     "createpropulsion:hoverpad",
     "createpropulsion:inline_optical_sensor",
     "createpropulsion:optical_sensor",
